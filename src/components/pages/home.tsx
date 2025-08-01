@@ -18,7 +18,7 @@ import {
   useSpring,
 } from "framer-motion";
 import { supabase } from "../../../supabase/supabase";
-import EmployerResume from "./employer-resume";
+import DynamicHireView from "../hire-view/DynamicHireView";
 import PortfolioExperience from "./portfolio-experience";
 import { useToast } from "@/components/ui/use-toast";
 import { Input } from "@/components/ui/input";
@@ -321,7 +321,7 @@ export default function LandingPage() {
 
   // Conditional rendering based on view mode
   if (viewMode === "hire") {
-    return <EmployerResume onBackToLanding={handleBackToLanding} />;
+    return <DynamicHireView onBackToLanding={handleBackToLanding} />;
   }
 
   if (viewMode === "portfolio") {

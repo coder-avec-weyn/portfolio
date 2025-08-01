@@ -62,6 +62,7 @@ import {
 import { supabase } from "../../../supabase/supabase";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "../../../supabase/auth";
+import HireViewEditor from "./HireViewEditor";
 
 interface ContactSubmission {
   id: string;
@@ -535,6 +536,13 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               >
                 <Mail className="w-3 h-3" />
                 <span className="hidden sm:inline">Forms</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="hire-view"
+                className="flex items-center gap-1 text-xs px-2 py-2"
+              >
+                <Users className="w-3 h-3" />
+                <span className="hidden sm:inline">Hire View</span>
               </TabsTrigger>
             </TabsList>
 
@@ -1455,6 +1463,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+
+            {/* Hire View Editor */}
+            <TabsContent value="hire-view" className="space-y-4">
+              <HireViewEditor />
             </TabsContent>
           </Tabs>
         </motion.div>
