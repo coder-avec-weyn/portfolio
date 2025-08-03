@@ -189,29 +189,29 @@ export default function HireViewEditor() {
   const testDatabaseConnection = async () => {
     try {
       console.log("Testing database connection...");
-      
+
       // Test each table individually
       const tables = [
         "hire_sections",
-        "hire_skills", 
+        "hire_skills",
         "hire_experience",
-        "hire_contact_fields"
+        "hire_contact_fields",
       ];
-      
+
       for (const table of tables) {
         const { data, error } = await supabase
           .from(table)
           .select("id")
           .limit(1);
-          
+
         if (error) {
           console.error(`Error accessing ${table}:`, error);
           throw new Error(`Cannot access ${table}: ${error.message}`);
         }
-        
+
         console.log(`✓ ${table} table accessible`);
       }
-      
+
       console.log("✓ All database tables accessible");
       return true;
     } catch (error: any) {
@@ -262,7 +262,7 @@ export default function HireViewEditor() {
           experiencesRes.error,
           contactFieldsRes.error,
         ].filter(Boolean);
-        
+
         if (errors.length > 0) {
           console.error("Database fetch errors:", errors);
           throw new Error(
@@ -432,7 +432,8 @@ export default function HireViewEditor() {
       console.error(`Section with id ${sectionId} not found in local state`);
       toast({
         title: "Update Failed",
-        description: "Section not found in local state. Please refresh the page.",
+        description:
+          "Section not found in local state. Please refresh the page.",
         variant: "destructive",
       });
       return;
@@ -460,7 +461,10 @@ export default function HireViewEditor() {
         updated_at: new Date().toISOString(),
       };
 
-      console.log(`Sending update to database for section ${sectionId}:`, updateData);
+      console.log(
+        `Sending update to database for section ${sectionId}:`,
+        updateData,
+      );
 
       // Database update with proper error handling
       const { data, error, count } = await supabase
@@ -480,7 +484,10 @@ export default function HireViewEditor() {
         throw new Error(`Database error: ${error.message}`);
       }
 
-      console.log(`Database response for section ${sectionId}:`, { data, count });
+      console.log(`Database response for section ${sectionId}:`, {
+        data,
+        count,
+      });
 
       // Check if any rows were affected
       if (!data || data.length === 0) {
@@ -571,8 +578,16 @@ export default function HireViewEditor() {
           `Section ${sectionId} updated successfully after retry:`,
           updatedSectionData,
         );
+
+        // Remove from optimistic updates
+        setOptimisticUpdates((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(sectionId);
+          return newSet;
+        });
+
         toast({
-          title: "Success",
+          title: "Saved",
           description: "Section updated successfully.",
         });
         return;
@@ -591,8 +606,15 @@ export default function HireViewEditor() {
         updatedSectionData,
       );
 
+      // Remove from optimistic updates
+      setOptimisticUpdates((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(sectionId);
+        return newSet;
+      });
+
       toast({
-        title: "Success",
+        title: "Saved",
         description: "Section updated successfully.",
       });
     } catch (validationError: any) {
@@ -603,23 +625,28 @@ export default function HireViewEditor() {
           section.id === sectionId ? originalSection : section,
         ),
       );
+
+      // Remove from optimistic updates
+      setOptimisticUpdates((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(sectionId);
+        return newSet;
+      });
+
       toast({
-        title: "Update Failed",
+        title: "Save Failed",
         description: validationError.message || "Failed to update section",
         variant: "destructive",
       });
     }
   };
 
-  // Debounced save for real-time editing to prevent race conditions
-  const debouncedUpdateSection = useCallback(
-    debounce(async (sectionId: string, updates: Partial<HireSection>) => {
-      await updateSection(sectionId, updates);
-    }, 1000), // Increased debounce time to reduce API calls
-    [updateSection],
-  );
+  // Track pending changes for each section
+  const [pendingChanges, setPendingChanges] = useState<
+    Map<string, Partial<HireSection>>
+  >(new Map());
 
-  const handleSectionFieldChange = async (
+  const handleSectionFieldChange = (
     sectionId: string,
     field: string,
     value: any,
@@ -631,11 +658,16 @@ export default function HireViewEditor() {
       ),
     );
 
-    // Debounced database save to prevent race conditions
-    debouncedUpdateSection(sectionId, { [field]: value });
+    // Track pending changes
+    setPendingChanges((prev) => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(sectionId) || {};
+      newMap.set(sectionId, { ...existing, [field]: value });
+      return newMap;
+    });
   };
 
-  const handleSectionContentChange = async (
+  const handleSectionContentChange = (
     sectionId: string,
     contentField: string,
     value: any,
@@ -655,8 +687,37 @@ export default function HireViewEditor() {
       ),
     );
 
-    // Debounced database save to prevent race conditions
-    debouncedUpdateSection(sectionId, { content: updatedContent });
+    // Track pending changes
+    setPendingChanges((prev) => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(sectionId) || {};
+      newMap.set(sectionId, { ...existing, content: updatedContent });
+      return newMap;
+    });
+  };
+
+  const saveSection = async (sectionId: string) => {
+    const changes = pendingChanges.get(sectionId);
+    if (!changes) {
+      toast({
+        title: "No Changes",
+        description: "No changes to save for this section.",
+      });
+      return;
+    }
+
+    await updateSection(sectionId, changes);
+
+    // Clear pending changes for this section
+    setPendingChanges((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(sectionId);
+      return newMap;
+    });
+  };
+
+  const hasPendingChanges = (sectionId: string) => {
+    return pendingChanges.has(sectionId);
   };
 
   const addSkill = async () => {
@@ -713,6 +774,52 @@ export default function HireViewEditor() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Track pending skill changes
+  const [pendingSkillChanges, setPendingSkillChanges] = useState<
+    Map<string, Partial<HireSkill>>
+  >(new Map());
+
+  const handleSkillChange = (skillId: string, field: string, value: any) => {
+    // Immediate UI update
+    setSkills((prev) =>
+      prev.map((skill) =>
+        skill.id === skillId ? { ...skill, [field]: value } : skill,
+      ),
+    );
+
+    // Track pending changes
+    setPendingSkillChanges((prev) => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(skillId) || {};
+      newMap.set(skillId, { ...existing, [field]: value });
+      return newMap;
+    });
+  };
+
+  const saveSkill = async (skillId: string) => {
+    const changes = pendingSkillChanges.get(skillId);
+    if (!changes) {
+      toast({
+        title: "No Changes",
+        description: "No changes to save for this skill.",
+      });
+      return;
+    }
+
+    await updateSkill(skillId, changes);
+
+    // Clear pending changes for this skill
+    setPendingSkillChanges((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(skillId);
+      return newMap;
+    });
+  };
+
+  const hasSkillPendingChanges = (skillId: string) => {
+    return pendingSkillChanges.has(skillId);
   };
 
   const updateSkill = async (skillId: string, updates: Partial<HireSkill>) => {
@@ -981,6 +1088,50 @@ export default function HireViewEditor() {
     }
   };
 
+  // Track pending experience changes
+  const [pendingExperienceChanges, setPendingExperienceChanges] = useState<
+    Map<string, Partial<HireExperience>>
+  >(new Map());
+
+  const handleExperienceChange = (expId: string, field: string, value: any) => {
+    // Immediate UI update
+    setExperiences((prev) =>
+      prev.map((exp) => (exp.id === expId ? { ...exp, [field]: value } : exp)),
+    );
+
+    // Track pending changes
+    setPendingExperienceChanges((prev) => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(expId) || {};
+      newMap.set(expId, { ...existing, [field]: value });
+      return newMap;
+    });
+  };
+
+  const saveExperience = async (expId: string) => {
+    const changes = pendingExperienceChanges.get(expId);
+    if (!changes) {
+      toast({
+        title: "No Changes",
+        description: "No changes to save for this experience.",
+      });
+      return;
+    }
+
+    await updateExperience(expId, changes);
+
+    // Clear pending changes for this experience
+    setPendingExperienceChanges((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(expId);
+      return newMap;
+    });
+  };
+
+  const hasExperiencePendingChanges = (expId: string) => {
+    return pendingExperienceChanges.has(expId);
+  };
+
   const updateExperience = async (
     expId: string,
     updates: Partial<HireExperience>,
@@ -1231,6 +1382,58 @@ export default function HireViewEditor() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Track pending contact field changes
+  const [pendingContactFieldChanges, setPendingContactFieldChanges] = useState<
+    Map<string, Partial<HireContactField>>
+  >(new Map());
+
+  const handleContactFieldChange = (
+    fieldId: string,
+    field: string,
+    value: any,
+  ) => {
+    // Immediate UI update
+    setContactFields((prev) =>
+      prev.map((contactField) =>
+        contactField.id === fieldId
+          ? { ...contactField, [field]: value }
+          : contactField,
+      ),
+    );
+
+    // Track pending changes
+    setPendingContactFieldChanges((prev) => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(fieldId) || {};
+      newMap.set(fieldId, { ...existing, [field]: value });
+      return newMap;
+    });
+  };
+
+  const saveContactField = async (fieldId: string) => {
+    const changes = pendingContactFieldChanges.get(fieldId);
+    if (!changes) {
+      toast({
+        title: "No Changes",
+        description: "No changes to save for this contact field.",
+      });
+      return;
+    }
+
+    await updateContactField(fieldId, changes);
+
+    // Clear pending changes for this contact field
+    setPendingContactFieldChanges((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(fieldId);
+      return newMap;
+    });
+  };
+
+  const hasContactFieldPendingChanges = (fieldId: string) => {
+    return pendingContactFieldChanges.has(fieldId);
   };
 
   const updateContactField = async (
@@ -1631,10 +1834,37 @@ export default function HireViewEditor() {
                         <Switch
                           checked={section.is_active}
                           onCheckedChange={(checked) =>
-                            updateSection(section.id, { is_active: checked })
+                            handleSectionFieldChange(
+                              section.id,
+                              "is_active",
+                              checked,
+                            )
                           }
                         />
                         <span className="text-sm text-gray-500">Active</span>
+                        {optimisticUpdates.has(section.id) && (
+                          <div className="flex items-center gap-1 text-xs text-blue-600">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Saving...</span>
+                          </div>
+                        )}
+                        {hasPendingChanges(section.id) && (
+                          <Badge variant="outline" className="text-xs">
+                            Unsaved
+                          </Badge>
+                        )}
+                        <Button
+                          onClick={() => saveSection(section.id)}
+                          size="sm"
+                          disabled={
+                            !hasPendingChanges(section.id) ||
+                            optimisticUpdates.has(section.id)
+                          }
+                          className="flex items-center gap-1"
+                        >
+                          <Save className="w-3 h-3" />
+                          Save
+                        </Button>
                       </div>
                     </div>
 
@@ -1846,7 +2076,7 @@ export default function HireViewEditor() {
                         <Input
                           value={skill.name}
                           onChange={(e) =>
-                            updateSkill(skill.id, { name: e.target.value })
+                            handleSkillChange(skill.id, "name", e.target.value)
                           }
                           placeholder="Skill name"
                         />
@@ -1856,7 +2086,7 @@ export default function HireViewEditor() {
                         <Select
                           value={skill.category}
                           onValueChange={(value) =>
-                            updateSkill(skill.id, { category: value })
+                            handleSkillChange(skill.id, "category", value)
                           }
                         >
                           <SelectTrigger>
@@ -1881,9 +2111,11 @@ export default function HireViewEditor() {
                           max="100"
                           value={skill.proficiency}
                           onChange={(e) =>
-                            updateSkill(skill.id, {
-                              proficiency: parseInt(e.target.value),
-                            })
+                            handleSkillChange(
+                              skill.id,
+                              "proficiency",
+                              parseInt(e.target.value),
+                            )
                           }
                         />
                       </div>
@@ -1894,14 +2126,22 @@ export default function HireViewEditor() {
                             type="color"
                             value={skill.color}
                             onChange={(e) =>
-                              updateSkill(skill.id, { color: e.target.value })
+                              handleSkillChange(
+                                skill.id,
+                                "color",
+                                e.target.value,
+                              )
                             }
                             className="w-10 h-8 rounded border"
                           />
                           <Input
                             value={skill.color}
                             onChange={(e) =>
-                              updateSkill(skill.id, { color: e.target.value })
+                              handleSkillChange(
+                                skill.id,
+                                "color",
+                                e.target.value,
+                              )
                             }
                             className="text-xs"
                           />
@@ -1912,7 +2152,7 @@ export default function HireViewEditor() {
                           <Switch
                             checked={skill.is_active}
                             onCheckedChange={(checked) =>
-                              updateSkill(skill.id, { is_active: checked })
+                              handleSkillChange(skill.id, "is_active", checked)
                             }
                             disabled={optimisticUpdates.has(skill.id)}
                           />
@@ -1924,6 +2164,23 @@ export default function HireViewEditor() {
                             <span>Saving...</span>
                           </div>
                         )}
+                        {hasSkillPendingChanges(skill.id) && (
+                          <Badge variant="outline" className="text-xs">
+                            Unsaved
+                          </Badge>
+                        )}
+                        <Button
+                          onClick={() => saveSkill(skill.id)}
+                          size="sm"
+                          disabled={
+                            !hasSkillPendingChanges(skill.id) ||
+                            optimisticUpdates.has(skill.id)
+                          }
+                          className="flex items-center gap-1"
+                        >
+                          <Save className="w-3 h-3" />
+                          Save
+                        </Button>
                         <Button
                           onClick={() => deleteSkill(skill.id)}
                           variant="destructive"
@@ -1965,9 +2222,23 @@ export default function HireViewEditor() {
                         <Switch
                           checked={exp.is_active}
                           onCheckedChange={(checked) =>
-                            updateExperience(exp.id, { is_active: checked })
+                            handleExperienceChange(exp.id, "is_active", checked)
                           }
                         />
+                        {hasExperiencePendingChanges(exp.id) && (
+                          <Badge variant="outline" className="text-xs">
+                            Unsaved
+                          </Badge>
+                        )}
+                        <Button
+                          onClick={() => saveExperience(exp.id)}
+                          size="sm"
+                          disabled={!hasExperiencePendingChanges(exp.id)}
+                          className="flex items-center gap-1"
+                        >
+                          <Save className="w-3 h-3" />
+                          Save
+                        </Button>
                         <Button
                           onClick={() => deleteExperience(exp.id)}
                           variant="destructive"
@@ -1984,9 +2255,11 @@ export default function HireViewEditor() {
                         <Input
                           value={exp.company}
                           onChange={(e) =>
-                            updateExperience(exp.id, {
-                              company: e.target.value,
-                            })
+                            handleExperienceChange(
+                              exp.id,
+                              "company",
+                              e.target.value,
+                            )
                           }
                           placeholder="Company name"
                         />
@@ -1996,9 +2269,11 @@ export default function HireViewEditor() {
                         <Input
                           value={exp.position}
                           onChange={(e) =>
-                            updateExperience(exp.id, {
-                              position: e.target.value,
-                            })
+                            handleExperienceChange(
+                              exp.id,
+                              "position",
+                              e.target.value,
+                            )
                           }
                           placeholder="Job title"
                         />
@@ -2008,9 +2283,11 @@ export default function HireViewEditor() {
                         <Input
                           value={exp.location || ""}
                           onChange={(e) =>
-                            updateExperience(exp.id, {
-                              location: e.target.value,
-                            })
+                            handleExperienceChange(
+                              exp.id,
+                              "location",
+                              e.target.value,
+                            )
                           }
                           placeholder="Location"
                         />
@@ -2021,9 +2298,11 @@ export default function HireViewEditor() {
                           type="date"
                           value={exp.start_date}
                           onChange={(e) =>
-                            updateExperience(exp.id, {
-                              start_date: e.target.value,
-                            })
+                            handleExperienceChange(
+                              exp.id,
+                              "start_date",
+                              e.target.value,
+                            )
                           }
                         />
                       </div>
@@ -2033,9 +2312,11 @@ export default function HireViewEditor() {
                           type="date"
                           value={exp.end_date || ""}
                           onChange={(e) =>
-                            updateExperience(exp.id, {
-                              end_date: e.target.value || null,
-                            })
+                            handleExperienceChange(
+                              exp.id,
+                              "end_date",
+                              e.target.value || null,
+                            )
                           }
                           disabled={exp.is_current}
                         />
@@ -2044,7 +2325,11 @@ export default function HireViewEditor() {
                         <Switch
                           checked={exp.is_current}
                           onCheckedChange={(checked) =>
-                            updateExperience(exp.id, { is_current: checked })
+                            handleExperienceChange(
+                              exp.id,
+                              "is_current",
+                              checked,
+                            )
                           }
                         />
                         <Label>Current Position</Label>
@@ -2056,9 +2341,11 @@ export default function HireViewEditor() {
                       <Textarea
                         value={exp.description || ""}
                         onChange={(e) =>
-                          updateExperience(exp.id, {
-                            description: e.target.value,
-                          })
+                          handleExperienceChange(
+                            exp.id,
+                            "description",
+                            e.target.value,
+                          )
                         }
                         placeholder="Job description and responsibilities"
                         rows={3}
@@ -2070,11 +2357,11 @@ export default function HireViewEditor() {
                       <Textarea
                         value={exp.achievements?.join("\n") || ""}
                         onChange={(e) =>
-                          updateExperience(exp.id, {
-                            achievements: e.target.value
-                              .split("\n")
-                              .filter((a) => a.trim()),
-                          })
+                          handleExperienceChange(
+                            exp.id,
+                            "achievements",
+                            e.target.value.split("\n").filter((a) => a.trim()),
+                          )
                         }
                         placeholder="Key achievements and accomplishments"
                         rows={4}
@@ -2109,7 +2396,11 @@ export default function HireViewEditor() {
                         <Select
                           value={field.field_type}
                           onValueChange={(value) =>
-                            updateContactField(field.id, { field_type: value })
+                            handleContactFieldChange(
+                              field.id,
+                              "field_type",
+                              value,
+                            )
                           }
                         >
                           <SelectTrigger>
@@ -2129,9 +2420,11 @@ export default function HireViewEditor() {
                         <Input
                           value={field.label}
                           onChange={(e) =>
-                            updateContactField(field.id, {
-                              label: e.target.value,
-                            })
+                            handleContactFieldChange(
+                              field.id,
+                              "label",
+                              e.target.value,
+                            )
                           }
                           placeholder="Field label"
                         />
@@ -2141,9 +2434,11 @@ export default function HireViewEditor() {
                         <Input
                           value={field.placeholder || ""}
                           onChange={(e) =>
-                            updateContactField(field.id, {
-                              placeholder: e.target.value,
-                            })
+                            handleContactFieldChange(
+                              field.id,
+                              "placeholder",
+                              e.target.value,
+                            )
                           }
                           placeholder="Placeholder text"
                         />
@@ -2153,9 +2448,11 @@ export default function HireViewEditor() {
                           <Switch
                             checked={field.is_required}
                             onCheckedChange={(checked) =>
-                              updateContactField(field.id, {
-                                is_required: checked,
-                              })
+                              handleContactFieldChange(
+                                field.id,
+                                "is_required",
+                                checked,
+                              )
                             }
                           />
                           <Label className="text-xs">Required</Label>
@@ -2164,13 +2461,29 @@ export default function HireViewEditor() {
                           <Switch
                             checked={field.is_active}
                             onCheckedChange={(checked) =>
-                              updateContactField(field.id, {
-                                is_active: checked,
-                              })
+                              handleContactFieldChange(
+                                field.id,
+                                "is_active",
+                                checked,
+                              )
                             }
                           />
                           <Label className="text-xs">Active</Label>
                         </div>
+                        {hasContactFieldPendingChanges(field.id) && (
+                          <Badge variant="outline" className="text-xs">
+                            Unsaved
+                          </Badge>
+                        )}
+                        <Button
+                          onClick={() => saveContactField(field.id)}
+                          size="sm"
+                          disabled={!hasContactFieldPendingChanges(field.id)}
+                          className="flex items-center gap-1"
+                        >
+                          <Save className="w-3 h-3" />
+                          Save
+                        </Button>
                         <Button
                           onClick={() => deleteContactField(field.id)}
                           variant="destructive"
