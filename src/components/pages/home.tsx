@@ -210,20 +210,20 @@ export default function LandingPage() {
       } else {
         // Fallback data for offline development
         setProfile({
-          full_name: "John Developer",
+          full_name: "Ramya Lakhani",
           bio: "Full-stack developer passionate about creating amazing digital experiences",
           role: "Full-Stack Developer",
-          avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=john",
+          avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ramya",
         });
       }
     } catch (error) {
       console.error("Error fetching profile:", error);
       // Use fallback data
       setProfile({
-        full_name: "John Developer",
+        full_name: "Ramya Lakhani",
         bio: "Full-stack developer passionate about creating amazing digital experiences",
         role: "Full-Stack Developer",
-        avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=john",
+        avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ramya",
       });
     }
   };
@@ -394,7 +394,7 @@ export default function LandingPage() {
                     {profile?.full_name
                       ?.split(" ")
                       .map((n) => n[0])
-                      .join("") || "JD"}
+                      .join("") || "RL"}
                   </div>
                 </div>
                 {/* Back of card */}
@@ -417,7 +417,7 @@ export default function LandingPage() {
             {/* Profile Info */}
             <motion.div variants={itemVariants} className="mb-8">
               <h1 className="text-4xl lg:text-6xl font-bold text-white mb-4 leading-tight">
-                {profile?.full_name || "John Developer"}
+                {profile?.full_name || "Ramya Lakhani"}
               </h1>
               <p className="text-xl lg:text-2xl text-cyan-300 font-medium mb-4">
                 {profile?.role || "Full-Stack Developer"}
@@ -632,7 +632,7 @@ export default function LandingPage() {
         </div>
       </main>
 
-      {/* Enhanced Gemini AI Chatbot */}
+      {/* Enhanced Gemini AI Chatbot - Available on Landing Page */}
       {profile && <ChatWidget profile={profile} />}
 
       {/* Floating elements for extra visual appeal */}

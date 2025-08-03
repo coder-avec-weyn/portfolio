@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../../supabase/supabase";
 import { useToast } from "@/components/ui/use-toast";
+import ChatWidget from "@/components/ui/chat-widget";
 
 interface Skill {
   id: string;
@@ -120,6 +121,7 @@ export default function PortfolioExperience({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [activeSection, setActiveSection] = useState("hero");
+  const [profile, setProfile] = useState<any>(null);
   const { toast } = useToast();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -129,9 +131,40 @@ export default function PortfolioExperience({
 
   useEffect(() => {
     fetchData();
+    fetchProfileData();
     localStorage.setItem("portfolioTheme", isDarkMode ? "dark" : "light");
     document.documentElement.classList.toggle("dark", isDarkMode);
   }, [isDarkMode]);
+
+  const fetchProfileData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .single();
+
+      if (data && !error) {
+        setProfile(data);
+      } else {
+        // Fallback data
+        setProfile({
+          full_name: "Ramya Lakhani",
+          bio: "Full-stack developer passionate about creating amazing digital experiences",
+          role: "Full-Stack Developer",
+          avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ramya",
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching profile:", error);
+      // Use fallback data
+      setProfile({
+        full_name: "Ramya Lakhani",
+        bio: "Full-stack developer passionate about creating amazing digital experiences",
+        role: "Full-Stack Developer",
+        avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ramya",
+      });
+    }
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -1012,6 +1045,9 @@ export default function PortfolioExperience({
           </p>
         </div>
       </footer>
+
+      {/* Enhanced Gemini AI Chatbot - Available on Portfolio Experience */}
+      {profile && <ChatWidget profile={profile} />}
     </div>
   );
 }

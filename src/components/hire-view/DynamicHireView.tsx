@@ -34,6 +34,7 @@ import { LoadingSpinner, LoadingScreen } from "@/components/ui/loading-spinner";
 import ErrorBoundary from "@/components/ui/error-boundary";
 import HireViewErrorBoundary from "./HireViewErrorBoundary";
 import DatabaseStatus from "@/components/ui/database-status";
+import ChatWidget from "@/components/ui/chat-widget";
 
 interface HireSection {
   id: string;
@@ -198,13 +199,46 @@ export default function DynamicHireView({
     borderRadius: 12,
     fontFamily: "Inter",
   });
+  const [profile, setProfile] = useState<any>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchHireViewData();
     setupRealtimeSubscriptions();
     loadThemeSettings();
+    fetchProfileData();
   }, []);
+
+  // Fetch profile data for chatbot
+  const fetchProfileData = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .single();
+
+      if (data && !error) {
+        setProfile(data);
+      } else {
+        // Fallback data
+        setProfile({
+          full_name: "Ramya Lakhani",
+          bio: "Full-stack developer passionate about creating amazing digital experiences",
+          role: "Full-Stack Developer",
+          avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ramya",
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching profile:", error);
+      // Use fallback data
+      setProfile({
+        full_name: "Ramya Lakhani",
+        bio: "Full-stack developer passionate about creating amazing digital experiences",
+        role: "Full-Stack Developer",
+        avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ramya",
+      });
+    }
+  };
 
   // Load theme settings from localStorage or admin panel
   const loadThemeSettings = useCallback(async () => {
@@ -602,7 +636,7 @@ export default function DynamicHireView({
           background: `linear-gradient(135deg, ${themeSettings.primaryColor}, ${themeSettings.secondaryColor})`,
         }}
       >
-        {section.content?.avatar_text || "JD"}
+        {section.content?.avatar_text || "RL"}
       </div>
       <h1
         className={`text-4xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}
@@ -626,18 +660,15 @@ export default function DynamicHireView({
       <div
         className={`flex flex-wrap justify-center gap-4 text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}
       >
-        {section.content?.email && (
-          <div className="flex items-center gap-1">
-            <Mail className="w-4 h-4" />
-            <span>{section.content.email}</span>
-          </div>
-        )}
-        {section.content?.phone && (
-          <div className="flex items-center gap-1">
-            <Phone className="w-4 h-4" />
-            <span>{section.content.phone}</span>
-          </div>
-        )}
+        {/* Always show contact information for hire view */}
+        <div className="flex items-center gap-1">
+          <Mail className="w-4 h-4" />
+          <span>{section.content?.email || "lakhani.ramya.u@gmail.co"}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Phone className="w-4 h-4" />
+          <span>{section.content?.phone || "+91 7202800803"}</span>
+        </div>
         {section.content?.location && (
           <div className="flex items-center gap-1">
             <MapPin className="w-4 h-4" />
@@ -1334,9 +1365,7 @@ export default function DynamicHireView({
             transition={{ duration: 0.6, delay: 0.5 }}
             className={`text-center text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
           >
-            <p>
-              © 2024 Professional Developer. Available for new opportunities.
-            </p>
+            <p>© 2024 Ramya Lakhani. Available for new opportunities.</p>
             <p className="mt-2 flex items-center justify-center gap-2">
               <span
                 className="inline-block w-2 h-2 rounded-full"
@@ -1350,6 +1379,9 @@ export default function DynamicHireView({
             </div>
           </motion.div>
         </motion.div>
+
+        {/* Enhanced Gemini AI Chatbot - Available on Hire View */}
+        {profile && <ChatWidget profile={profile} />}
       </div>
     </HireViewErrorBoundary>
   );

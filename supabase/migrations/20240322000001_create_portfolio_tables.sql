@@ -117,9 +117,9 @@ INSERT INTO public.experiences (company, position, description, start_date, end_
 ('Freelance', 'Web Developer', 'Provided web development services to small businesses and startups. Built custom websites and web applications using modern technologies. Managed client relationships and project timelines effectively.', '2021-08-01', '2022-05-31', false, 'Remote', 3);
 
 INSERT INTO public.testimonials (name, position, company, content, rating, featured) VALUES
-('Sarah Johnson', 'Product Manager', 'Tech Startup Inc.', 'Working with this developer has been an absolute pleasure. Their attention to detail and ability to deliver high-quality code on time is exceptional. They bring creative solutions to complex problems.', 5, true),
-('Mike Chen', 'CEO', 'Digital Agency', 'One of the most talented developers I have worked with. Their technical skills combined with excellent communication make them a valuable team member. Highly recommended!', 5, true),
-('Emily Rodriguez', 'Startup Founder', 'InnovateCorp', 'They helped us build our MVP from scratch and guided us through the entire development process. The final product exceeded our expectations and launched successfully.', 5, false);
+('Sarah Johnson', 'Product Manager', 'Tech Startup Inc.', 'Working with Ramya has been an absolute pleasure. Her attention to detail and ability to deliver high-quality code on time is exceptional. She brings creative solutions to complex problems.', 5, true),
+('Mike Chen', 'CEO', 'Digital Agency', 'One of the most talented developers I have worked with. Ramya''s technical skills combined with excellent communication make her a valuable team member. Highly recommended!', 5, true),
+('Emily Rodriguez', 'Startup Founder', 'InnovateCorp', 'Ramya helped us build our MVP from scratch and guided us through the entire development process. The final product exceeded our expectations and launched successfully.', 5, false);
 
 INSERT INTO public.theme_settings (name, primary_color, secondary_color, accent_color, background_gradient, is_active) VALUES
 ('Professional Blue', '#1e40af', '#3b82f6', '#06b6d4', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', true),
@@ -239,11 +239,16 @@ CREATE INDEX IF NOT EXISTS idx_hire_contact_fields_updated ON public.hire_contac
 -- Insert default hire sections
 INSERT INTO public.hire_sections (section_type, title, content, order_index, is_active) VALUES
 ('hero', 'Professional Summary', '{
-  "headline": "Experienced Full-Stack Developer",
+  "headline": "Ramya Lakhani - Full-Stack Developer",
   "tagline": "Building scalable web applications with modern technologies",
+  "bio": "Passionate developer creating amazing digital experiences with modern technologies",
+  "email": "lakhani.ramya.u@gmail.co",
+  "phone": "+91 7202800803",
+  "location": "India",
   "cta_text": "Let''s Work Together",
   "background_image": "",
-  "show_avatar": true
+  "show_avatar": true,
+  "avatar_text": "RL"
 }', 1, true),
 ('skills', 'Technical Skills', '{
   "description": "Comprehensive skill set across the full development stack",

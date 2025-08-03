@@ -99,11 +99,16 @@ $$;
 -- Insert default hire sections with proper structure (only if empty)
 INSERT INTO public.hire_sections (section_type, title, content, order_index, is_active)
 SELECT 'hero', 'Professional Summary', '{
-  "headline": "Experienced Full-Stack Developer",
+  "headline": "Ramya Lakhani - Full-Stack Developer",
   "tagline": "Building scalable web applications with modern technologies",
+  "bio": "Passionate developer creating amazing digital experiences with modern technologies",
+  "email": "lakhani.ramya.u@gmail.co",
+  "phone": "+91 7202800803",
+  "location": "India",
   "cta_text": "Let''s Work Together",
   "background_image": "",
-  "show_avatar": true
+  "show_avatar": true,
+  "avatar_text": "RL"
 }', 1, true
 WHERE NOT EXISTS (SELECT 1 FROM public.hire_sections WHERE section_type = 'hero');
 
