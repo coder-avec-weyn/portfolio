@@ -395,6 +395,7 @@ export default function LandingPage() {
                   <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-900 to-purple-900 flex items-center justify-center text-white text-4xl lg:text-5xl font-bold overflow-hidden">
                     <img
                       src={
+                        localStorage.getItem("profileImage") ||
                         profile?.avatar_url ||
                         "https://api.dicebear.com/7.x/avataaars/svg?seed=boydev&accessories=prescription02&accessoriesChance=100&clothingGraphic=code&top=shortHair&topChance=100&facialHair=light&facialHairChance=100&skinColor=light"
                       }

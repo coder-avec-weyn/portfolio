@@ -389,10 +389,12 @@ export default function PortfolioExperience({
                   : "from-purple-600 to-blue-600"
               } flex items-center justify-center text-white text-6xl font-bold`}
             >
-              {profile?.avatar_url ? (
+              {localStorage.getItem("profileImage") || profile?.avatar_url ? (
                 <img
-                  src={profile.avatar_url}
-                  alt={profile.full_name || "Profile"}
+                  src={
+                    localStorage.getItem("profileImage") || profile.avatar_url
+                  }
+                  alt={profile?.full_name || "Profile"}
                   className="w-full h-full object-cover"
                 />
               ) : (

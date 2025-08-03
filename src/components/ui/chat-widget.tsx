@@ -113,9 +113,9 @@ const MessageBubble = ({
       {/* Avatar for bot messages */}
       {!message.isUser && (
         <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center mr-3 mt-1 flex-shrink-0 overflow-hidden">
-          {profile.avatar_url ? (
+          {localStorage.getItem("profileImage") || profile.avatar_url ? (
             <img
-              src={profile.avatar_url}
+              src={localStorage.getItem("profileImage") || profile.avatar_url}
               alt={profile.full_name || "AI Assistant"}
               className="w-full h-full object-cover"
             />
@@ -456,9 +456,13 @@ export default function ChatWidget({ profile, className }: ChatWidgetProps) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center relative overflow-hidden">
-                    {profile.avatar_url ? (
+                    {localStorage.getItem("profileImage") ||
+                    profile.avatar_url ? (
                       <img
-                        src={profile.avatar_url}
+                        src={
+                          localStorage.getItem("profileImage") ||
+                          profile.avatar_url
+                        }
                         alt={profile.full_name || "AI Assistant"}
                         className="w-full h-full object-cover"
                       />
