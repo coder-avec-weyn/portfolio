@@ -213,7 +213,8 @@ export default function LandingPage() {
           full_name: "Ramya Lakhani",
           bio: "Full-stack developer passionate about creating amazing digital experiences",
           role: "Full-Stack Developer",
-          avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ramya",
+          avatar_url:
+            "https://api.dicebear.com/7.x/avataaars/svg?seed=boydev&accessories=prescription02&accessoriesChance=100&clothingGraphic=code&top=shortHair&topChance=100&facialHair=light&facialHairChance=100&skinColor=light",
         });
       }
     } catch (error) {
@@ -223,7 +224,8 @@ export default function LandingPage() {
         full_name: "Ramya Lakhani",
         bio: "Full-stack developer passionate about creating amazing digital experiences",
         role: "Full-Stack Developer",
-        avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ramya",
+        avatar_url:
+          "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100",
       });
     }
   };
@@ -391,18 +393,19 @@ export default function LandingPage() {
                   style={{ backfaceVisibility: "hidden" }}
                 >
                   <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-900 to-purple-900 flex items-center justify-center text-white text-4xl lg:text-5xl font-bold overflow-hidden">
-                    {profile?.avatar_url ? (
-                      <img
-                        src={profile.avatar_url}
-                        alt={profile.full_name || "Profile"}
-                        className="w-full h-full object-cover rounded-full"
-                      />
-                    ) : (
-                      profile?.full_name
-                        ?.split(" ")
-                        .map((n) => n[0])
-                        .join("") || "RL"
-                    )}
+                    <img
+                      src={
+                        profile?.avatar_url ||
+                        "https://api.dicebear.com/7.x/avataaars/svg?seed=boydev&accessories=prescription02&accessoriesChance=100&clothingGraphic=code&top=shortHair&topChance=100&facialHair=light&facialHairChance=100&skinColor=light"
+                      }
+                      alt={profile?.full_name || "Boy Developer Avatar"}
+                      className="w-full h-full object-cover rounded-full"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.src =
+                          "https://api.dicebear.com/7.x/avataaars/svg?seed=boydev&accessories=prescription02&accessoriesChance=100&clothingGraphic=code&top=shortHair&topChance=100&facialHair=light&facialHairChance=100&skinColor=light";
+                      }}
+                    />
                   </div>
                 </div>
                 {/* Back of card */}

@@ -347,13 +347,74 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         .select("*")
         .single();
 
-      if (data && !error) {
-        setResumeData(data.content || resumeData);
-        logOperation("Resume data fetched successfully");
+      if (data && !error && data.content) {
+        // Ensure we have the proper structure
+        const content =
+          typeof data.content === "string"
+            ? JSON.parse(data.content)
+            : data.content;
+        setResumeData({
+          personalInfo: {
+            fullName: content.personalInfo?.fullName || "",
+            email: content.personalInfo?.email || "",
+            phone: content.personalInfo?.phone || "",
+            location: content.personalInfo?.location || "",
+            website: content.personalInfo?.website || "",
+            linkedin: content.personalInfo?.linkedin || "",
+            github: content.personalInfo?.github || "",
+            summary: content.personalInfo?.summary || "",
+          },
+          education: content.education || [],
+          certifications: content.certifications || [],
+          languages: content.languages || [],
+          interests: content.interests || "",
+        });
+        logOperation("Resume data fetched and parsed successfully");
+      } else {
+        logOperation("No resume data found, using defaults");
+        // Initialize with default data if none exists
+        const defaultData = {
+          personalInfo: {
+            fullName: "Ramya Lakhani",
+            email: "lakhani.ramya.u@gmail.co",
+            phone: "+91 7202800803",
+            location: "India",
+            website: "",
+            linkedin: "",
+            github: "",
+            summary:
+              "Passionate full-stack developer with expertise in modern web technologies, creating scalable applications and innovative digital solutions.",
+          },
+          education: [],
+          certifications: [],
+          languages: ["English", "Hindi"],
+          interests: "Web Development, Open Source, Technology Innovation",
+        };
+        setResumeData(defaultData);
+        // Save the default data to database
+        await saveResumeData();
       }
     } catch (error: any) {
       console.error("Error fetching resume data:", error);
       logOperation(`Resume data fetch failed: ${error.message}`, false);
+      // Set default data on error
+      setResumeData({
+        personalInfo: {
+          fullName: "Ramya Lakhani",
+          email: "lakhani.ramya.u@gmail.co",
+          phone: "+91 7202800803",
+          location: "India",
+          website: "",
+          linkedin: "",
+          github: "",
+          summary:
+            "Passionate full-stack developer with expertise in modern web technologies, creating scalable applications and innovative digital solutions.",
+        },
+        education: [],
+        certifications: [],
+        languages: ["English", "Hindi"],
+        interests: "Web Development, Open Source, Technology Innovation",
+      });
     }
   };
 
@@ -378,9 +439,32 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const saveResumeData = async () => {
     try {
       logOperation("Saving resume data");
+
+      // Ensure we have valid data structure with proper null checks
+      const dataToSave = {
+        personalInfo: {
+          fullName: resumeData?.personalInfo?.fullName || "",
+          email: resumeData?.personalInfo?.email || "",
+          phone: resumeData?.personalInfo?.phone || "",
+          location: resumeData?.personalInfo?.location || "",
+          website: resumeData?.personalInfo?.website || "",
+          linkedin: resumeData?.personalInfo?.linkedin || "",
+          github: resumeData?.personalInfo?.github || "",
+          summary: resumeData?.personalInfo?.summary || "",
+        },
+        education: resumeData?.education || [],
+        certifications: resumeData?.certifications || [],
+        languages: Array.isArray(resumeData?.languages)
+          ? resumeData.languages
+          : [],
+        interests: resumeData?.interests || "",
+      };
+
+      console.log("Saving resume data:", dataToSave);
+
       const { error } = await supabase.from("resume_data").upsert({
         id: "main",
-        content: resumeData,
+        content: dataToSave,
         updated_at: new Date().toISOString(),
       });
 
@@ -392,13 +476,15 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       logOperation("Resume data saved successfully");
       toast({
         title: "Resume Data Saved",
-        description: "Your resume information has been updated.",
+        description: "Your resume information has been updated successfully.",
       });
     } catch (error: any) {
       console.error("Error saving resume data:", error);
+      logOperation(`Resume save failed: ${error.message}`, false);
       toast({
         title: "Save Failed",
-        description: error.message || "Failed to save resume data.",
+        description:
+          error.message || "Failed to save resume data. Please try again.",
         variant: "destructive",
       });
     }
@@ -434,15 +520,33 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     logOperation("Starting image upload");
 
     try {
+      // Get current user
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error("User not authenticated");
+      }
+
       // Upload to Supabase Storage
       const fileExt = file.name.split(".").pop();
-      const fileName = `profile-${Date.now()}.${fileExt}`;
+      const fileName = `profile-${user.id}-${Date.now()}.${fileExt}`;
+
+      // Delete old image if exists
+      if (profileImage && profileImage.includes("profile-images")) {
+        const oldFileName = profileImage.split("/").pop();
+        if (oldFileName) {
+          await supabase.storage.from("profile-images").remove([oldFileName]);
+        }
+      }
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("profile-images")
         .upload(fileName, file, {
           cacheControl: "3600",
-          upsert: false,
+          upsert: true,
         });
 
       if (uploadError) {
@@ -457,7 +561,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
       // Update profile with new avatar URL
       const { error: updateError } = await supabase.from("profiles").upsert({
-        id: (await supabase.auth.getUser()).data.user?.id,
+        id: user.id,
         avatar_url: publicUrl,
         updated_at: new Date().toISOString(),
       });
@@ -476,6 +580,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       });
     } catch (error: any) {
       console.error("Error uploading image:", error);
+      logOperation(`Image upload failed: ${error.message}`, false);
       toast({
         title: "Upload Failed",
         description: error.message || "Failed to upload profile image.",
@@ -1982,19 +2087,95 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Full Name</Label>
+                          <Input
+                            value={resumeData?.personalInfo?.fullName || ""}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setResumeData((prev) => ({
+                                ...prev,
+                                personalInfo: {
+                                  ...(prev?.personalInfo || {}),
+                                  fullName: newValue,
+                                },
+                              }));
+                            }}
+                            placeholder="Your full name"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Email</Label>
+                          <Input
+                            value={resumeData?.personalInfo?.email || ""}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setResumeData((prev) => ({
+                                ...prev,
+                                personalInfo: {
+                                  ...(prev?.personalInfo || {}),
+                                  email: newValue,
+                                },
+                              }));
+                            }}
+                            placeholder="your.email@example.com"
+                            type="email"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Phone</Label>
+                          <Input
+                            value={resumeData?.personalInfo?.phone || ""}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setResumeData((prev) => ({
+                                ...prev,
+                                personalInfo: {
+                                  ...(prev?.personalInfo || {}),
+                                  phone: newValue,
+                                },
+                              }));
+                            }}
+                            placeholder="+1 (555) 123-4567"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Location</Label>
+                          <Input
+                            value={resumeData?.personalInfo?.location || ""}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setResumeData((prev) => ({
+                                ...prev,
+                                personalInfo: {
+                                  ...(prev?.personalInfo || {}),
+                                  location: newValue,
+                                },
+                              }));
+                            }}
+                            placeholder="City, Country"
+                          />
+                        </div>
+                      </div>
+
                       <div className="space-y-2">
                         <Label>Professional Summary</Label>
                         <Textarea
-                          value={resumeData.personalInfo.summary}
-                          onChange={(e) =>
-                            setResumeData({
-                              ...resumeData,
+                          value={resumeData?.personalInfo?.summary || ""}
+                          onChange={(e) => {
+                            const newValue = e.target.value;
+                            setResumeData((prev) => ({
+                              ...prev,
                               personalInfo: {
-                                ...resumeData.personalInfo,
-                                summary: e.target.value,
+                                ...(prev?.personalInfo || {}),
+                                summary: newValue,
                               },
-                            })
-                          }
+                            }));
+                          }}
                           placeholder="Write a brief professional summary..."
                           rows={3}
                         />
@@ -2004,49 +2185,74 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         <div className="space-y-2">
                           <Label>LinkedIn URL</Label>
                           <Input
-                            value={resumeData.personalInfo.linkedin}
-                            onChange={(e) =>
-                              setResumeData({
-                                ...resumeData,
+                            value={resumeData?.personalInfo?.linkedin || ""}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setResumeData((prev) => ({
+                                ...prev,
                                 personalInfo: {
-                                  ...resumeData.personalInfo,
-                                  linkedin: e.target.value,
+                                  ...(prev?.personalInfo || {}),
+                                  linkedin: newValue,
                                 },
-                              })
-                            }
+                              }));
+                            }}
                             placeholder="https://linkedin.com/in/..."
                           />
                         </div>
                         <div className="space-y-2">
                           <Label>GitHub URL</Label>
                           <Input
-                            value={resumeData.personalInfo.github}
-                            onChange={(e) =>
-                              setResumeData({
-                                ...resumeData,
+                            value={resumeData?.personalInfo?.github || ""}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setResumeData((prev) => ({
+                                ...prev,
                                 personalInfo: {
-                                  ...resumeData.personalInfo,
-                                  github: e.target.value,
+                                  ...(prev?.personalInfo || {}),
+                                  github: newValue,
                                 },
-                              })
-                            }
+                              }));
+                            }}
                             placeholder="https://github.com/..."
                           />
                         </div>
                       </div>
 
                       <div className="space-y-2">
+                        <Label>Website</Label>
+                        <Input
+                          value={resumeData?.personalInfo?.website || ""}
+                          onChange={(e) => {
+                            const newValue = e.target.value;
+                            setResumeData((prev) => ({
+                              ...prev,
+                              personalInfo: {
+                                ...(prev?.personalInfo || {}),
+                                website: newValue,
+                              },
+                            }));
+                          }}
+                          placeholder="https://yourwebsite.com"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
                         <Label>Languages</Label>
                         <Input
-                          value={resumeData.languages.join(", ")}
-                          onChange={(e) =>
-                            setResumeData({
-                              ...resumeData,
-                              languages: e.target.value
+                          value={
+                            Array.isArray(resumeData?.languages)
+                              ? resumeData.languages.join(", ")
+                              : ""
+                          }
+                          onChange={(e) => {
+                            const newValue = e.target.value;
+                            setResumeData((prev) => ({
+                              ...prev,
+                              languages: newValue
                                 .split(", ")
                                 .filter((lang) => lang.trim()),
-                            })
-                          }
+                            }));
+                          }}
                           placeholder="English, Hindi, etc."
                         />
                       </div>
@@ -2054,13 +2260,14 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       <div className="space-y-2">
                         <Label>Interests & Hobbies</Label>
                         <Input
-                          value={resumeData.interests}
-                          onChange={(e) =>
-                            setResumeData({
-                              ...resumeData,
-                              interests: e.target.value,
-                            })
-                          }
+                          value={resumeData?.interests || ""}
+                          onChange={(e) => {
+                            const newValue = e.target.value;
+                            setResumeData((prev) => ({
+                              ...prev,
+                              interests: newValue,
+                            }));
+                          }}
                           placeholder="Photography, Travel, Open Source..."
                         />
                       </div>
@@ -2096,9 +2303,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <span className="text-white text-4xl font-bold">
-                            RL
-                          </span>
+                          <img
+                            src="https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100"
+                            alt="Developer Avatar"
+                            className="w-full h-full object-cover"
+                          />
                         )}
                       </div>
                       {isUploadingImage && (

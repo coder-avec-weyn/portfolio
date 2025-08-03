@@ -584,43 +584,55 @@ export default function DynamicHireView({
     }
   };
 
-  const generatePDF = async () => {
+  const generatePDF = async (enhanced = false) => {
     try {
-      // Call the admin resume generation function
-      const response = await supabase.functions.invoke(
-        "supabase-functions-generate_resume",
-        {
-          body: { user_id: "public" },
-        },
+      toast({
+        title: "Generating Resume",
+        description: enhanced
+          ? "Creating enhanced AI-powered resume with LinkedIn integration..."
+          : "Generating standard resume...",
+      });
+
+      // Import the PDF generation logic dynamically
+      const { generateResumePDF, generateEnhancedResumePDF } = await import(
+        "@/lib/resume-generator"
       );
 
-      if (response.error) {
-        throw response.error;
-      }
+      let result;
+      if (enhanced) {
+        // Check if LinkedIn URL is available
+        const resumeData = await supabase
+          .from("resume_data")
+          .select("*")
+          .single();
+        const hasLinkedIn = resumeData.data?.content?.personalInfo?.linkedin;
 
-      // If we have a direct file URL, open it
-      const resumeSection = sections.find((s) => s.section_type === "resume");
-      const fileUrl = resumeSection?.content?.file_url;
+        result = await generateEnhancedResumePDF(hasLinkedIn);
 
-      if (fileUrl) {
-        window.open(fileUrl, "_blank");
-      } else {
-        // Generate PDF on the fly using the same logic as admin panel
         toast({
-          title: "Generating Resume",
-          description:
-            "Your resume is being generated. This may take a moment...",
+          title: "Enhanced Resume Generated!",
+          description: hasLinkedIn
+            ? "Resume created with LinkedIn profile integration and AI enhancements."
+            : "Resume created with AI enhancements. Add LinkedIn URL in admin panel for profile integration.",
         });
+      } else {
+        result = await generateResumePDF();
 
-        // Import the PDF generation logic dynamically
-        const { generateResumePDF } = await import("@/lib/resume-generator");
-        await generateResumePDF();
+        toast({
+          title: "Resume Generated!",
+          description:
+            "Your professional resume has been downloaded successfully.",
+        });
       }
+
+      console.log("Resume generation result:", result);
     } catch (error) {
       console.error("Error generating resume:", error);
       toast({
-        title: "Resume Download",
-        description: "Resume file is being prepared. Please try again shortly.",
+        title: "Resume Generation Failed",
+        description:
+          "There was an error generating your resume. Please try again or contact support.",
+        variant: "destructive",
       });
     }
   };
@@ -1132,22 +1144,65 @@ export default function DynamicHireView({
       >
         <CardContent className="p-8">
           <h3
-            className={`text-xl font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}
+            className={`text-xl font-semibold mb-6 ${isDarkMode ? "text-white" : "text-gray-900"}`}
             style={{ fontFamily: themeSettings.fontFamily }}
           >
             {section.title || "Download Resume"}
           </h3>
-          <Button
-            onClick={generatePDF}
-            className="text-white flex items-center gap-2 mx-auto"
-            style={{
-              backgroundColor: themeSettings.accentColor,
-              borderColor: themeSettings.accentColor,
-            }}
+
+          <div className="space-y-4">
+            {/* Standard Resume Button */}
+            <Button
+              onClick={() => generatePDF(false)}
+              variant="outline"
+              className={`w-full flex items-center gap-2 ${
+                isDarkMode
+                  ? "bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600"
+                  : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              <Download className="w-4 h-4" />
+              Standard Resume
+            </Button>
+
+            {/* Enhanced AI Resume Button */}
+            <Button
+              onClick={() => generatePDF(true)}
+              className="w-full text-white flex items-center gap-2"
+              style={{
+                backgroundColor: themeSettings.accentColor,
+                borderColor: themeSettings.accentColor,
+              }}
+            >
+              <Download className="w-4 h-4" />
+              <span className="flex items-center gap-2">
+                Enhanced AI Resume
+                <span className="text-xs bg-white/20 px-2 py-1 rounded-full">
+                  NEW
+                </span>
+              </span>
+            </Button>
+          </div>
+
+          <div
+            className={`mt-6 p-4 rounded-lg ${isDarkMode ? "bg-gray-700" : "bg-blue-50"}`}
           >
-            <Download className="w-4 h-4" />
-            {section.content?.button_text || "Download PDF Resume"}
-          </Button>
+            <h4
+              className={`font-medium mb-2 ${isDarkMode ? "text-gray-200" : "text-blue-900"}`}
+            >
+              Enhanced Resume Features:
+            </h4>
+            <ul
+              className={`text-sm space-y-1 ${isDarkMode ? "text-gray-300" : "text-blue-700"}`}
+            >
+              <li>• AI-powered content enhancement</li>
+              <li>• LinkedIn profile integration (if URL provided)</li>
+              <li>• Professional formatting and styling</li>
+              <li>• Optimized skill categorization</li>
+              <li>• Enhanced project descriptions</li>
+            </ul>
+          </div>
+
           {(section.content?.version || section.content?.last_updated) && (
             <p
               className={`text-sm mt-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
