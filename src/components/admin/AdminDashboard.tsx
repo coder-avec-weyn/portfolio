@@ -63,6 +63,7 @@ import { supabase } from "../../../supabase/supabase";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "../../../supabase/auth";
 import HireViewEditor from "./HireViewEditor";
+import PortfolioCMS from "./PortfolioCMS";
 
 interface ContactSubmission {
   id: string;
@@ -452,7 +453,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         {/* Main Content */}
         <motion.div variants={itemVariants}>
           <Tabs defaultValue="messages" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-6 lg:grid-cols-12 gap-1 h-auto p-1">
+            <TabsList className="grid w-full grid-cols-6 lg:grid-cols-14 gap-1 h-auto p-1">
               <TabsTrigger
                 value="messages"
                 className="flex items-center gap-1 text-xs px-2 py-2"
@@ -466,6 +467,20 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               >
                 <BarChart3 className="w-3 h-3" />
                 <span className="hidden sm:inline">Analytics</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="portfolio-cms"
+                className="flex items-center gap-1 text-xs px-2 py-2"
+              >
+                <Settings className="w-3 h-3" />
+                <span className="hidden sm:inline">Portfolio CMS</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="hire-view"
+                className="flex items-center gap-1 text-xs px-2 py-2"
+              >
+                <Users className="w-3 h-3" />
+                <span className="hidden sm:inline">Hire View</span>
               </TabsTrigger>
               <TabsTrigger
                 value="theme"
@@ -536,13 +551,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               >
                 <Mail className="w-3 h-3" />
                 <span className="hidden sm:inline">Forms</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="hire-view"
-                className="flex items-center gap-1 text-xs px-2 py-2"
-              >
-                <Users className="w-3 h-3" />
-                <span className="hidden sm:inline">Hire View</span>
               </TabsTrigger>
             </TabsList>
 
@@ -1463,6 +1471,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+
+            {/* Portfolio CMS */}
+            <TabsContent value="portfolio-cms" className="space-y-4">
+              <PortfolioCMS />
             </TabsContent>
 
             {/* Hire View Editor */}

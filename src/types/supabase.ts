@@ -55,6 +55,7 @@ export type Database = {
           description: string | null
           end_date: string | null
           id: string
+          is_active: boolean | null
           is_current: boolean | null
           location: string | null
           order_index: number | null
@@ -68,6 +69,7 @@ export type Database = {
           description?: string | null
           end_date?: string | null
           id?: string
+          is_active?: boolean | null
           is_current?: boolean | null
           location?: string | null
           order_index?: number | null
@@ -81,6 +83,7 @@ export type Database = {
           description?: string | null
           end_date?: string | null
           id?: string
+          is_active?: boolean | null
           is_current?: boolean | null
           location?: string | null
           order_index?: number | null
@@ -316,6 +319,7 @@ export type Database = {
           github_url: string | null
           id: string
           image_url: string | null
+          is_active: boolean | null
           live_url: string | null
           long_description: string | null
           order_index: number | null
@@ -331,6 +335,7 @@ export type Database = {
           github_url?: string | null
           id?: string
           image_url?: string | null
+          is_active?: boolean | null
           live_url?: string | null
           long_description?: string | null
           order_index?: number | null
@@ -346,6 +351,7 @@ export type Database = {
           github_url?: string | null
           id?: string
           image_url?: string | null
+          is_active?: boolean | null
           live_url?: string | null
           long_description?: string | null
           order_index?: number | null
@@ -362,6 +368,7 @@ export type Database = {
           created_at: string
           icon_url: string | null
           id: string
+          is_active: boolean | null
           name: string
           proficiency: number | null
         }
@@ -370,6 +377,7 @@ export type Database = {
           created_at?: string
           icon_url?: string | null
           id?: string
+          is_active?: boolean | null
           name: string
           proficiency?: number | null
         }
@@ -378,6 +386,7 @@ export type Database = {
           created_at?: string
           icon_url?: string | null
           id?: string
+          is_active?: boolean | null
           name?: string
           proficiency?: number | null
         }
@@ -391,6 +400,7 @@ export type Database = {
           created_at: string
           featured: boolean | null
           id: string
+          is_active: boolean | null
           name: string
           position: string | null
           rating: number | null
@@ -402,6 +412,7 @@ export type Database = {
           created_at?: string
           featured?: boolean | null
           id?: string
+          is_active?: boolean | null
           name: string
           position?: string | null
           rating?: number | null
@@ -413,6 +424,7 @@ export type Database = {
           created_at?: string
           featured?: boolean | null
           id?: string
+          is_active?: boolean | null
           name?: string
           position?: string | null
           rating?: number | null
