@@ -12,8 +12,12 @@ interface AdminLoginProps {
   onLoginSuccess: () => void;
 }
 
+// Static admin credentials
+const ADMIN_EMAIL = "Art1204";
+const ADMIN_PASSWORD = "Art@1204";
+
 export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
-  const [email, setEmail] = useState("art1204@portfolio.dev");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -24,19 +28,59 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      // Check static credentials first
+      if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+        // Store admin authentication in localStorage
+        localStorage.setItem("adminAuthenticated", "true");
 
-      if (error) throw error;
+        // Try to authenticate with Supabase as well (optional)
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: ADMIN_EMAIL,
+            password: ADMIN_PASSWORD,
+          });
 
-      if (data.user) {
+          // If user doesn't exist, try to create it
+          if (error && error.message.includes("Invalid login credentials")) {
+            const { error: signUpError } = await supabase.auth.signUp({
+              email: ADMIN_EMAIL,
+              password: ADMIN_PASSWORD,
+              options: {
+                data: {
+                  full_name: "Admin User",
+                  role: "admin",
+                },
+              },
+            });
+
+            if (
+              !signUpError ||
+              signUpError.message.includes("already registered")
+            ) {
+              // Try to sign in again
+              await supabase.auth.signInWithPassword({
+                email: ADMIN_EMAIL,
+                password: ADMIN_PASSWORD,
+              });
+            }
+          }
+        } catch (supabaseError) {
+          // Supabase auth failed, but we'll continue with localStorage auth
+          console.warn(
+            "Supabase authentication failed, using local auth:",
+            supabaseError,
+          );
+        }
+
         toast({
           title: "Login successful!",
           description: "Welcome to the admin dashboard.",
         });
         onLoginSuccess();
+      } else {
+        throw new Error(
+          "Invalid admin credentials. Please use the correct email and password.",
+        );
       }
     } catch (error: any) {
       toast({
@@ -78,17 +122,17 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
             <form onSubmit={handleLogin} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-white/80">
-                  Email
+                  Username
                 </Label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/40" />
                   <Input
                     id="email"
-                    type="email"
+                    type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10 bg-white/5 border-white/20 text-white placeholder:text-white/40 focus:border-purple-400"
-                    placeholder="admin@portfolio.dev"
+                    placeholder="Art1204"
                     required
                   />
                 </div>
@@ -135,7 +179,10 @@ export default function AdminLogin({ onLoginSuccess }: AdminLoginProps) {
             </form>
             <div className="mt-6 text-center">
               <p className="text-xs text-white/40">
-                Demo credentials: art1204@portfolio.dev / Art@1204
+                Use the admin credentials to access the dashboard
+              </p>
+              <p className="text-xs text-white/30 mt-1">
+                Username: Art1204 | Password: Art@1204
               </p>
             </div>
           </CardContent>

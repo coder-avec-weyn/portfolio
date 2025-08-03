@@ -21,8 +21,10 @@ export type Database = {
           id: string
           message: string
           name: string
+          priority: string | null
           status: string | null
           subject: string | null
+          tags: string[] | null
           user_flow: string | null
         }
         Insert: {
@@ -31,8 +33,10 @@ export type Database = {
           id?: string
           message: string
           name: string
+          priority?: string | null
           status?: string | null
           subject?: string | null
+          tags?: string[] | null
           user_flow?: string | null
         }
         Update: {
@@ -41,8 +45,10 @@ export type Database = {
           id?: string
           message?: string
           name?: string
+          priority?: string | null
           status?: string | null
           subject?: string | null
+          tags?: string[] | null
           user_flow?: string | null
         }
         Relationships: []
@@ -55,6 +61,7 @@ export type Database = {
           description: string | null
           end_date: string | null
           id: string
+          is_active: boolean | null
           is_current: boolean | null
           location: string | null
           order_index: number | null
@@ -68,6 +75,7 @@ export type Database = {
           description?: string | null
           end_date?: string | null
           id?: string
+          is_active?: boolean | null
           is_current?: boolean | null
           location?: string | null
           order_index?: number | null
@@ -81,11 +89,192 @@ export type Database = {
           description?: string | null
           end_date?: string | null
           id?: string
+          is_active?: boolean | null
           is_current?: boolean | null
           location?: string | null
           order_index?: number | null
           position?: string
           start_date?: string
+        }
+        Relationships: []
+      }
+      hire_contact_fields: {
+        Row: {
+          created_at: string
+          field_type: string
+          id: string
+          is_active: boolean | null
+          is_required: boolean | null
+          label: string
+          options: Json | null
+          order_index: number | null
+          placeholder: string | null
+        }
+        Insert: {
+          created_at?: string
+          field_type: string
+          id?: string
+          is_active?: boolean | null
+          is_required?: boolean | null
+          label: string
+          options?: Json | null
+          order_index?: number | null
+          placeholder?: string | null
+        }
+        Update: {
+          created_at?: string
+          field_type?: string
+          id?: string
+          is_active?: boolean | null
+          is_required?: boolean | null
+          label?: string
+          options?: Json | null
+          order_index?: number | null
+          placeholder?: string | null
+        }
+        Relationships: []
+      }
+      hire_experience: {
+        Row: {
+          achievements: string[] | null
+          company: string
+          company_logo: string | null
+          created_at: string
+          description: string | null
+          end_date: string | null
+          id: string
+          is_active: boolean | null
+          is_current: boolean | null
+          location: string | null
+          order_index: number | null
+          position: string
+          start_date: string
+        }
+        Insert: {
+          achievements?: string[] | null
+          company: string
+          company_logo?: string | null
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_current?: boolean | null
+          location?: string | null
+          order_index?: number | null
+          position: string
+          start_date: string
+        }
+        Update: {
+          achievements?: string[] | null
+          company?: string
+          company_logo?: string | null
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_current?: boolean | null
+          location?: string | null
+          order_index?: number | null
+          position?: string
+          start_date?: string
+        }
+        Relationships: []
+      }
+      hire_sections: {
+        Row: {
+          content: Json
+          created_at: string
+          id: string
+          is_active: boolean | null
+          order_index: number | null
+          section_type: string
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          content?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          order_index?: number | null
+          section_type: string
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          order_index?: number | null
+          section_type?: string
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      hire_skills: {
+        Row: {
+          category: string
+          color: string | null
+          created_at: string
+          icon_url: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          order_index: number | null
+          proficiency: number | null
+        }
+        Insert: {
+          category: string
+          color?: string | null
+          created_at?: string
+          icon_url?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          order_index?: number | null
+          proficiency?: number | null
+        }
+        Update: {
+          category?: string
+          color?: string | null
+          created_at?: string
+          icon_url?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          order_index?: number | null
+          proficiency?: number | null
+        }
+        Relationships: []
+      }
+      hire_view_settings: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean | null
+          layout: string | null
+          theme: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          layout?: string | null
+          theme?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          layout?: string | null
+          theme?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -136,6 +325,7 @@ export type Database = {
           github_url: string | null
           id: string
           image_url: string | null
+          is_active: boolean | null
           live_url: string | null
           long_description: string | null
           order_index: number | null
@@ -151,6 +341,7 @@ export type Database = {
           github_url?: string | null
           id?: string
           image_url?: string | null
+          is_active?: boolean | null
           live_url?: string | null
           long_description?: string | null
           order_index?: number | null
@@ -166,6 +357,7 @@ export type Database = {
           github_url?: string | null
           id?: string
           image_url?: string | null
+          is_active?: boolean | null
           live_url?: string | null
           long_description?: string | null
           order_index?: number | null
@@ -176,12 +368,37 @@ export type Database = {
         }
         Relationships: []
       }
+      resume_data: {
+        Row: {
+          content: Json
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          content?: Json
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       skills: {
         Row: {
           category: string
           created_at: string
           icon_url: string | null
           id: string
+          is_active: boolean | null
           name: string
           proficiency: number | null
         }
@@ -190,6 +407,7 @@ export type Database = {
           created_at?: string
           icon_url?: string | null
           id?: string
+          is_active?: boolean | null
           name: string
           proficiency?: number | null
         }
@@ -198,6 +416,7 @@ export type Database = {
           created_at?: string
           icon_url?: string | null
           id?: string
+          is_active?: boolean | null
           name?: string
           proficiency?: number | null
         }
@@ -211,6 +430,7 @@ export type Database = {
           created_at: string
           featured: boolean | null
           id: string
+          is_active: boolean | null
           name: string
           position: string | null
           rating: number | null
@@ -222,6 +442,7 @@ export type Database = {
           created_at?: string
           featured?: boolean | null
           id?: string
+          is_active?: boolean | null
           name: string
           position?: string | null
           rating?: number | null
@@ -233,6 +454,7 @@ export type Database = {
           created_at?: string
           featured?: boolean | null
           id?: string
+          is_active?: boolean | null
           name?: string
           position?: string | null
           rating?: number | null
@@ -274,7 +496,9 @@ export type Database = {
       }
       visitor_analytics: {
         Row: {
+          country: string | null
           created_at: string
+          device_type: string | null
           id: string
           ip_address: unknown | null
           page_path: string | null
@@ -285,7 +509,9 @@ export type Database = {
           user_flow: string | null
         }
         Insert: {
+          country?: string | null
           created_at?: string
+          device_type?: string | null
           id?: string
           ip_address?: unknown | null
           page_path?: string | null
@@ -296,7 +522,9 @@ export type Database = {
           user_flow?: string | null
         }
         Update: {
+          country?: string | null
           created_at?: string
+          device_type?: string | null
           id?: string
           ip_address?: unknown | null
           page_path?: string | null
@@ -310,7 +538,27 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      analytics_summary: {
+        Row: {
+          avg_time_spent: number | null
+          date: string | null
+          unique_sessions: number | null
+          unique_visitors: number | null
+          user_flow: string | null
+          visits: number | null
+        }
+        Relationships: []
+      }
+      contact_summary: {
+        Row: {
+          count: number | null
+          date: string | null
+          priority: string | null
+          status: string | null
+          user_flow: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never

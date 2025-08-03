@@ -10,6 +10,7 @@ import AdminPage from "./components/pages/admin";
 import { AuthProvider, useAuth } from "../supabase/auth";
 import { Toaster } from "./components/ui/toaster";
 import { LoadingScreen, LoadingSpinner } from "./components/ui/loading-spinner";
+import ErrorBoundary from "./components/ui/error-boundary";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -19,7 +20,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) {
-    return <Navigate to="/" />;
+    return <Navigate to="/login" />;
   }
 
   return <>{children}</>;
@@ -42,20 +43,24 @@ function AppRoutes() {
         />
         <Route path="/success" element={<Success />} />
         <Route path="/admin" element={<AdminPage />} />
+        {/* Catch-all route for 404 */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      {import.meta.env.VITE_TEMPO === "true" && useRoutes(routes)}
+      {useRoutes(routes)}
     </>
   );
 }
 
 function App() {
   return (
-    <AuthProvider>
-      <Suspense fallback={<LoadingScreen text="Loading application..." />}>
-        <AppRoutes />
-      </Suspense>
-      <Toaster />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Suspense fallback={<LoadingScreen text="Loading application..." />}>
+          <AppRoutes />
+        </Suspense>
+        <Toaster />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
