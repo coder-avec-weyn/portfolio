@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -675,15 +677,27 @@ export default function DynamicHireView({
           background: `linear-gradient(135deg, ${themeSettings.primaryColor}, ${themeSettings.secondaryColor})`,
         }}
       >
-        {profile?.avatar_url ? (
-          <img
-            src={profile.avatar_url}
-            alt={profile.full_name || "Profile"}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          section.content?.avatar_text || "RL"
-        )}
+        {(() => {
+          const profileImage = profile?.avatar_url;
+          const adminImage = localStorage.getItem("profileImage");
+          const imageUrl = profileImage || adminImage;
+
+          return imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={profile?.full_name || "Profile"}
+              className="w-full h-full object-cover"
+              key={imageUrl}
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.src =
+                  "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+              }}
+            />
+          ) : (
+            section.content?.avatar_text || "RL"
+          );
+        })()}
       </div>
       <h1
         className={`text-4xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}

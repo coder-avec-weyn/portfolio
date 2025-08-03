@@ -10,7 +10,7 @@ import AdminPage from "./components/pages/admin";
 import { AuthProvider, useAuth } from "../supabase/auth";
 import { Toaster } from "./components/ui/toaster";
 import { LoadingScreen, LoadingSpinner } from "./components/ui/loading-spinner";
-import ErrorBoundary from "./components/ui/error-boundary";
+import ErrorBoundary from "@/components/ui/error-boundary";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();

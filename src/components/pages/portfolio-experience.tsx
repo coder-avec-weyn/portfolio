@@ -389,13 +389,18 @@ export default function PortfolioExperience({
                   : "from-purple-600 to-blue-600"
               } flex items-center justify-center text-white text-6xl font-bold`}
             >
-              {localStorage.getItem("profileImage") || profile?.avatar_url ? (
+              {profile?.avatar_url || localStorage.getItem("profileImage") ? (
                 <img
                   src={
-                    localStorage.getItem("profileImage") || profile.avatar_url
+                    profile?.avatar_url || localStorage.getItem("profileImage")
                   }
                   alt={profile?.full_name || "Profile"}
                   className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.src =
+                      "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+                  }}
                 />
               ) : (
                 profile?.full_name

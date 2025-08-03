@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -76,11 +78,13 @@ const MessageBubble = ({
   isLast,
   onReply,
   onReaction,
+  profile,
 }: {
   message: ChatMessage;
   isLast: boolean;
   onReply?: (messageText: string) => void;
   onReaction?: (messageId: string, type: "like" | "dislike") => void;
+  profile: Profile;
 }) => {
   const [showActions, setShowActions] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -113,15 +117,26 @@ const MessageBubble = ({
       {/* Avatar for bot messages */}
       {!message.isUser && (
         <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center mr-3 mt-1 flex-shrink-0 overflow-hidden">
-          {localStorage.getItem("profileImage") || profile.avatar_url ? (
-            <img
-              src={localStorage.getItem("profileImage") || profile.avatar_url}
-              alt={profile.full_name || "AI Assistant"}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <Bot className="w-4 h-4 text-white" />
-          )}
+          {(() => {
+            const profileImage = profile?.avatar_url;
+            const adminImage = localStorage.getItem("profileImage");
+            const imageUrl = profileImage || adminImage;
+
+            return imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={profile?.full_name || "AI Assistant"}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src =
+                    "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+                }}
+              />
+            ) : (
+              <Bot className="w-4 h-4 text-white" />
+            );
+          })()}
         </div>
       )}
 
@@ -456,19 +471,26 @@ export default function ChatWidget({ profile, className }: ChatWidgetProps) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center relative overflow-hidden">
-                    {localStorage.getItem("profileImage") ||
-                    profile.avatar_url ? (
-                      <img
-                        src={
-                          localStorage.getItem("profileImage") ||
-                          profile.avatar_url
-                        }
-                        alt={profile.full_name || "AI Assistant"}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <Sparkles className="w-4 h-4 text-white" />
-                    )}
+                    {(() => {
+                      const profileImage = profile?.avatar_url;
+                      const adminImage = localStorage.getItem("profileImage");
+                      const imageUrl = profileImage || adminImage;
+
+                      return imageUrl ? (
+                        <img
+                          src={imageUrl}
+                          alt={profile?.full_name || "AI Assistant"}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.src =
+                              "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+                          }}
+                        />
+                      ) : (
+                        <Sparkles className="w-4 h-4 text-white" />
+                      );
+                    })()}
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-900 animate-pulse"></div>
                   </div>
                   <div>
@@ -518,6 +540,7 @@ export default function ChatWidget({ profile, className }: ChatWidgetProps) {
                       isLast={index === messages.length - 1}
                       onReply={handleReply}
                       onReaction={handleReaction}
+                      profile={profile}
                     />
                   ))
                 )}

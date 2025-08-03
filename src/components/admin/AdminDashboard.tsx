@@ -540,48 +540,57 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
   const fetchProfileImage = async () => {
     try {
-      logOperation("Fetching profile image");
+      logOperation("Fetching profile image from server");
 
-      // First check localStorage for current image
-      const localImage = localStorage.getItem("profileImage");
-      if (localImage) {
-        setProfileImage(localImage);
-        logOperation("Profile image loaded from localStorage");
-        return; // Use localStorage image as priority
-      }
-
-      // Try to fetch from database without authentication check
+      // Always fetch from database first to get the latest server-side image
       const { data, error } = await supabase
         .from("profiles")
         .select("avatar_url")
-        .eq("id", "main") // Use fixed ID since we removed auth checks
+        .eq("id", "main")
         .single();
 
       if (data && !error && data.avatar_url) {
-        // If database has an image and it's different from localStorage, use database version
+        // Use server image as the source of truth
         setProfileImage(data.avatar_url);
-        // Also store in localStorage for consistency
+        // Update localStorage to match server
         localStorage.setItem("profileImage", data.avatar_url);
         logOperation(
-          "Profile image fetched successfully from database and synced to localStorage",
+          "Profile image fetched from server and synced to localStorage",
         );
       } else {
-        // Set default image if no image found anywhere
-        const defaultImage =
-          "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
-        setProfileImage(defaultImage);
-        localStorage.setItem("profileImage", defaultImage);
-        logOperation("Using default profile image");
+        // Check localStorage as fallback
+        const localImage = localStorage.getItem("profileImage");
+        if (localImage) {
+          setProfileImage(localImage);
+          logOperation("Using cached profile image from localStorage");
+        } else {
+          // Set default image if no image found anywhere
+          const defaultImage =
+            "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+          setProfileImage(defaultImage);
+          localStorage.setItem("profileImage", defaultImage);
+          logOperation("Using default profile image");
+        }
       }
     } catch (error: any) {
       console.error("Error fetching profile image:", error);
       logOperation(`Profile image fetch failed: ${error.message}`, false);
 
-      // Use default image on error
-      const defaultImage =
-        "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
-      setProfileImage(defaultImage);
-      localStorage.setItem("profileImage", defaultImage);
+      // Check localStorage as fallback
+      const localImage = localStorage.getItem("profileImage");
+      if (localImage) {
+        setProfileImage(localImage);
+        logOperation(
+          "Using cached profile image from localStorage as fallback",
+        );
+      } else {
+        // Use default image on error
+        const defaultImage =
+          "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+        setProfileImage(defaultImage);
+        localStorage.setItem("profileImage", defaultImage);
+        logOperation("Using default profile image as fallback");
+      }
     }
   };
 
@@ -766,74 +775,95 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     }
 
     setIsUploadingImage(true);
-    logOperation("Starting image upload and cleanup process");
+    logOperation("Starting server-side image upload process");
 
     try {
-      // Remove old profile image from localStorage
-      const oldLocalImage = localStorage.getItem("profileImage");
-      if (oldLocalImage) {
-        localStorage.removeItem("profileImage");
-        logOperation("Removed old profile image from localStorage");
+      // Generate unique filename with timestamp
+      const timestamp = Date.now();
+      const fileExtension = file.name.split(".").pop() || "jpg";
+      const fileName = `profile-${timestamp}.${fileExtension}`;
+
+      logOperation(`Uploading file: ${fileName}`);
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("profile-images")
+        .upload(fileName, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        logOperation(`Storage upload failed: ${uploadError.message}`, false);
+        throw uploadError;
       }
 
-      // Create a data URL for the new image
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const imageUrl = e.target?.result as string;
+      logOperation("File uploaded to storage successfully");
 
-        // Store new image in localStorage
-        localStorage.setItem("profileImage", imageUrl);
-        setProfileImage(imageUrl);
-        logOperation("New profile image stored in localStorage");
+      // Get public URL for the uploaded image
+      const { data: urlData } = supabase.storage
+        .from("profile-images")
+        .getPublicUrl(fileName);
 
-        // Also try to save to database
-        try {
-          const { error: updateError } = await supabase
-            .from("profiles")
-            .upsert({
-              id: "main", // Use a fixed ID since we removed auth checks
-              avatar_url: imageUrl, // Store the data URL in database as well
-              updated_at: new Date().toISOString(),
-            });
+      const publicUrl = urlData.publicUrl;
+      logOperation(`Generated public URL: ${publicUrl}`);
 
-          if (updateError) {
-            logOperation(
-              `Profile database update failed: ${updateError.message}`,
-              false,
-            );
-          } else {
-            logOperation("Profile updated in database with new image");
+      // Remove old image from storage if it exists
+      try {
+        const oldImageUrl =
+          localStorage.getItem("profileImage") || profile?.avatar_url;
+        if (oldImageUrl && oldImageUrl.includes("profile-images")) {
+          // Extract filename from old URL
+          const oldFileName = oldImageUrl.split("/").pop();
+          if (oldFileName && oldFileName !== fileName) {
+            const { error: deleteError } = await supabase.storage
+              .from("profile-images")
+              .remove([oldFileName]);
+
+            if (!deleteError) {
+              logOperation(`Removed old image: ${oldFileName}`);
+            }
           }
-        } catch (dbError) {
-          logOperation(`Database update failed: ${dbError}`, false);
         }
+      } catch (cleanupError) {
+        logOperation(`Old image cleanup failed: ${cleanupError}`, false);
+        // Don't fail the upload if cleanup fails
+      }
 
-        toast({
-          title: "Profile Image Updated",
-          description:
-            "Your profile image has been updated successfully and will be used across the application.",
-        });
-      };
+      // Update profile in database with new image URL
+      const { error: updateError } = await supabase.from("profiles").upsert({
+        id: "main",
+        avatar_url: publicUrl,
+        updated_at: new Date().toISOString(),
+      });
 
-      reader.onerror = () => {
-        logOperation("Failed to read uploaded file", false);
-        toast({
-          title: "Upload Failed",
-          description:
-            "Failed to process the uploaded image. Please try again.",
-          variant: "destructive",
-        });
-      };
+      if (updateError) {
+        logOperation(
+          `Profile database update failed: ${updateError.message}`,
+          false,
+        );
+        throw updateError;
+      }
 
-      // Read the file as data URL
-      reader.readAsDataURL(file);
+      logOperation("Profile updated in database with new image URL");
+
+      // Update local state and localStorage for immediate UI update
+      setProfileImage(publicUrl);
+      localStorage.setItem("profileImage", publicUrl);
+      logOperation("Local state and localStorage updated");
+
+      toast({
+        title: "Profile Image Updated",
+        description:
+          "Your profile image has been uploaded to the server and will be accessible across the entire website.",
+      });
     } catch (error: any) {
       console.error("Error uploading image:", error);
       logOperation(`Image upload failed: ${error.message}`, false);
 
       toast({
         title: "Upload Failed",
-        description: "Failed to upload profile image. Please try again.",
+        description: `Failed to upload profile image: ${error.message}. Please try again.`,
         variant: "destructive",
       });
     } finally {
@@ -2583,9 +2613,16 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         <li>• Chat widget avatar</li>
                         <li>• Generated PDF resume</li>
                         <li>
-                          • Stored in: public/profile-images/{"{filename}"}
+                          • Stored in: Supabase Storage (profile-images bucket)
                         </li>
                       </ul>
+                      <div className="mt-3 p-2 bg-green-50 rounded border border-green-200">
+                        <p className="text-xs text-green-700">
+                          ✅ Server-side storage: Images are uploaded to
+                          Supabase Storage and accessible across all devices and
+                          sessions.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
