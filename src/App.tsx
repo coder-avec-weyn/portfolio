@@ -46,7 +46,7 @@ function AppRoutes() {
         {/* Catch-all route for 404 */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      {import.meta.env.VITE_TEMPO === "true" && useRoutes(routes)}
+      {useRoutes(routes)}
     </>
   );
 }

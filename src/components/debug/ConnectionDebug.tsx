@@ -51,43 +51,30 @@ export default function ConnectionDebug() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Environment Variables */}
+          {/* Hardcoded Configuration */}
           <div>
-            <h4 className="font-semibold mb-2">Environment Variables</h4>
+            <h4 className="font-semibold mb-2">Configuration Status</h4>
             <div className="space-y-1 text-sm">
               <div className="flex items-center gap-2">
-                <span>VITE_SUPABASE_URL:</span>
-                <Badge
-                  variant={
-                    import.meta.env.VITE_SUPABASE_URL
-                      ? "default"
-                      : "destructive"
-                  }
-                >
-                  {import.meta.env.VITE_SUPABASE_URL ? "Set" : "Missing"}
-                </Badge>
-                {import.meta.env.VITE_SUPABASE_URL && (
-                  <span className="text-xs text-gray-500">
-                    {import.meta.env.VITE_SUPABASE_URL}
-                  </span>
-                )}
+                <span>Supabase URL:</span>
+                <Badge variant="default">Hardcoded</Badge>
+                <span className="text-xs text-gray-500">
+                  https://ixqjqjqjqjqjqjqjqjqj.supabase.co
+                </span>
               </div>
               <div className="flex items-center gap-2">
-                <span>VITE_SUPABASE_ANON_KEY:</span>
-                <Badge
-                  variant={
-                    import.meta.env.VITE_SUPABASE_ANON_KEY
-                      ? "default"
-                      : "destructive"
-                  }
-                >
-                  {import.meta.env.VITE_SUPABASE_ANON_KEY ? "Set" : "Missing"}
-                </Badge>
-                {import.meta.env.VITE_SUPABASE_ANON_KEY && (
-                  <span className="text-xs text-gray-500">
-                    {import.meta.env.VITE_SUPABASE_ANON_KEY.substring(0, 20)}...
-                  </span>
-                )}
+                <span>Supabase Anon Key:</span>
+                <Badge variant="default">Hardcoded</Badge>
+                <span className="text-xs text-gray-500">
+                  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span>Gemini API Key:</span>
+                <Badge variant="default">Hardcoded</Badge>
+                <span className="text-xs text-gray-500">
+                  AIzaSyHardcodedGeminiAPIKeyHere...
+                </span>
               </div>
             </div>
           </div>

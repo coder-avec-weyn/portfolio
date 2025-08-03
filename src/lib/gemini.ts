@@ -1,7 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "");
+const genAI = new GoogleGenerativeAI(
+  "AIzaSyHardcodedGeminiAPIKeyHere123456789",
+);
 
 interface PortfolioData {
   full_name: string;
@@ -23,10 +25,7 @@ export async function queryGemini(
   portfolioData: PortfolioData,
 ): Promise<string> {
   try {
-    // Validate API key
-    if (!import.meta.env.VITE_GEMINI_API_KEY) {
-      throw new Error("Gemini API key not configured");
-    }
+    // API key is hardcoded
 
     // Create context prompt with portfolio data
     const CONTEXT_PROMPT = `
