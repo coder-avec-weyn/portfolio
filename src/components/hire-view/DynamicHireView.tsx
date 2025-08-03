@@ -37,6 +37,7 @@ import ErrorBoundary from "@/components/ui/error-boundary";
 import HireViewErrorBoundary from "./HireViewErrorBoundary";
 import DatabaseStatus from "@/components/ui/database-status";
 import ChatWidget from "@/components/ui/chat-widget";
+import { testSupabaseConnection, testAllTables } from "@/lib/connection-test";
 
 interface HireSection {
   id: string;
@@ -205,10 +206,21 @@ export default function DynamicHireView({
   const { toast } = useToast();
 
   useEffect(() => {
-    fetchHireViewData();
-    setupRealtimeSubscriptions();
-    loadThemeSettings();
-    fetchProfileData();
+    // Test connection first
+    testSupabaseConnection().then((result) => {
+      console.log("Connection test result:", result);
+      if (!result.success) {
+        setError(`Database connection failed: ${result.error}`);
+        setIsLoading(false);
+        return;
+      }
+
+      // If connection is successful, proceed with data fetching
+      fetchHireViewData();
+      setupRealtimeSubscriptions();
+      loadThemeSettings();
+      fetchProfileData();
+    });
   }, []);
 
   // Fetch profile data for chatbot
