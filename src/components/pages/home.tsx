@@ -390,11 +390,19 @@ export default function LandingPage() {
                   className="absolute inset-0 w-full h-full rounded-full bg-gradient-to-br from-purple-500 via-cyan-500 to-pink-500 p-1 shadow-2xl"
                   style={{ backfaceVisibility: "hidden" }}
                 >
-                  <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-900 to-purple-900 flex items-center justify-center text-white text-4xl lg:text-5xl font-bold">
-                    {profile?.full_name
-                      ?.split(" ")
-                      .map((n) => n[0])
-                      .join("") || "RL"}
+                  <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-900 to-purple-900 flex items-center justify-center text-white text-4xl lg:text-5xl font-bold overflow-hidden">
+                    {profile?.avatar_url ? (
+                      <img
+                        src={profile.avatar_url}
+                        alt={profile.full_name || "Profile"}
+                        className="w-full h-full object-cover rounded-full"
+                      />
+                    ) : (
+                      profile?.full_name
+                        ?.split(" ")
+                        .map((n) => n[0])
+                        .join("") || "RL"
+                    )}
                   </div>
                 </div>
                 {/* Back of card */}

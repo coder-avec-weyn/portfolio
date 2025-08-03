@@ -584,13 +584,40 @@ export default function DynamicHireView({
     }
   };
 
-  const generatePDF = () => {
-    const resumeSection = sections.find((s) => s.section_type === "resume");
-    const fileUrl = resumeSection?.content?.file_url;
+  const generatePDF = async () => {
+    try {
+      // Call the admin resume generation function
+      const response = await supabase.functions.invoke(
+        "supabase-functions-generate_resume",
+        {
+          body: { user_id: "public" },
+        },
+      );
 
-    if (fileUrl) {
-      window.open(fileUrl, "_blank");
-    } else {
+      if (response.error) {
+        throw response.error;
+      }
+
+      // If we have a direct file URL, open it
+      const resumeSection = sections.find((s) => s.section_type === "resume");
+      const fileUrl = resumeSection?.content?.file_url;
+
+      if (fileUrl) {
+        window.open(fileUrl, "_blank");
+      } else {
+        // Generate PDF on the fly using the same logic as admin panel
+        toast({
+          title: "Generating Resume",
+          description:
+            "Your resume is being generated. This may take a moment...",
+        });
+
+        // Import the PDF generation logic dynamically
+        const { generateResumePDF } = await import("@/lib/resume-generator");
+        await generateResumePDF();
+      }
+    } catch (error) {
+      console.error("Error generating resume:", error);
       toast({
         title: "Resume Download",
         description: "Resume file is being prepared. Please try again shortly.",
@@ -631,12 +658,20 @@ export default function DynamicHireView({
       }}
     >
       <div
-        className="w-32 h-32 mx-auto rounded-full flex items-center justify-center text-white text-4xl font-bold shadow-lg"
+        className="w-32 h-32 mx-auto rounded-full flex items-center justify-center text-white text-4xl font-bold shadow-lg overflow-hidden"
         style={{
           background: `linear-gradient(135deg, ${themeSettings.primaryColor}, ${themeSettings.secondaryColor})`,
         }}
       >
-        {section.content?.avatar_text || "RL"}
+        {profile?.avatar_url ? (
+          <img
+            src={profile.avatar_url}
+            alt={profile.full_name || "Profile"}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          section.content?.avatar_text || "RL"
+        )}
       </div>
       <h1
         className={`text-4xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}

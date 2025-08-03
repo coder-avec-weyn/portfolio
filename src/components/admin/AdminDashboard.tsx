@@ -58,12 +58,15 @@ import {
   HardDrive,
   Wifi,
   WifiOff,
+  Loader2,
 } from "lucide-react";
 import { supabase } from "../../../supabase/supabase";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "../../../supabase/auth";
 import HireViewEditor from "./HireViewEditor";
 import PortfolioCMS from "./PortfolioCMS";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 interface ContactSubmission {
   id: string;
@@ -145,11 +148,36 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [debugMode, setDebugMode] = useState(false);
   const [operationLogs, setOperationLogs] = useState<string[]>([]);
 
+  // Resume Management State
+  const [resumeData, setResumeData] = useState({
+    personalInfo: {
+      fullName: "",
+      email: "",
+      phone: "",
+      location: "",
+      website: "",
+      linkedin: "",
+      github: "",
+      summary: "",
+    },
+    education: [],
+    certifications: [],
+    languages: [],
+    interests: "",
+  });
+  const [isGeneratingResume, setIsGeneratingResume] = useState(false);
+
+  // Profile Image State
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
   const { signOut } = useAuth();
   const { toast } = useToast();
 
   useEffect(() => {
     fetchData();
+    fetchResumeData();
+    fetchProfileImage();
 
     // Session timeout implementation
     const checkSession = () => {
@@ -309,6 +337,410 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const handleLogout = async () => {
     await signOut();
     onLogout();
+  };
+
+  const fetchResumeData = async () => {
+    try {
+      logOperation("Fetching resume data");
+      const { data, error } = await supabase
+        .from("resume_data")
+        .select("*")
+        .single();
+
+      if (data && !error) {
+        setResumeData(data.content || resumeData);
+        logOperation("Resume data fetched successfully");
+      }
+    } catch (error: any) {
+      console.error("Error fetching resume data:", error);
+      logOperation(`Resume data fetch failed: ${error.message}`, false);
+    }
+  };
+
+  const fetchProfileImage = async () => {
+    try {
+      logOperation("Fetching profile image");
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("avatar_url")
+        .single();
+
+      if (data && !error && data.avatar_url) {
+        setProfileImage(data.avatar_url);
+        logOperation("Profile image fetched successfully");
+      }
+    } catch (error: any) {
+      console.error("Error fetching profile image:", error);
+      logOperation(`Profile image fetch failed: ${error.message}`, false);
+    }
+  };
+
+  const saveResumeData = async () => {
+    try {
+      logOperation("Saving resume data");
+      const { error } = await supabase.from("resume_data").upsert({
+        id: "main",
+        content: resumeData,
+        updated_at: new Date().toISOString(),
+      });
+
+      if (error) {
+        logOperation(`Failed to save resume data: ${error.message}`, false);
+        throw error;
+      }
+
+      logOperation("Resume data saved successfully");
+      toast({
+        title: "Resume Data Saved",
+        description: "Your resume information has been updated.",
+      });
+    } catch (error: any) {
+      console.error("Error saving resume data:", error);
+      toast({
+        title: "Save Failed",
+        description: error.message || "Failed to save resume data.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleImageUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please upload an image file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File Too Large",
+        description: "Please upload an image smaller than 5MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploadingImage(true);
+    logOperation("Starting image upload");
+
+    try {
+      // Upload to Supabase Storage
+      const fileExt = file.name.split(".").pop();
+      const fileName = `profile-${Date.now()}.${fileExt}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("profile-images")
+        .upload(fileName, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        logOperation(`Image upload failed: ${uploadError.message}`, false);
+        throw uploadError;
+      }
+
+      // Get public URL
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("profile-images").getPublicUrl(fileName);
+
+      // Update profile with new avatar URL
+      const { error: updateError } = await supabase.from("profiles").upsert({
+        id: (await supabase.auth.getUser()).data.user?.id,
+        avatar_url: publicUrl,
+        updated_at: new Date().toISOString(),
+      });
+
+      if (updateError) {
+        logOperation(`Profile update failed: ${updateError.message}`, false);
+        throw updateError;
+      }
+
+      setProfileImage(publicUrl);
+      logOperation("Profile image uploaded and updated successfully");
+
+      toast({
+        title: "Profile Image Updated",
+        description: "Your profile image has been uploaded successfully.",
+      });
+    } catch (error: any) {
+      console.error("Error uploading image:", error);
+      toast({
+        title: "Upload Failed",
+        description: error.message || "Failed to upload profile image.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const generateResumePDF = async () => {
+    setIsGeneratingResume(true);
+    logOperation("Starting resume PDF generation");
+
+    try {
+      // Fetch latest data from database
+      const [profileRes, skillsRes, experiencesRes, projectsRes] =
+        await Promise.all([
+          supabase.from("profiles").select("*").single(),
+          supabase
+            .from("hire_skills")
+            .select("*")
+            .eq("is_active", true)
+            .order("order_index"),
+          supabase
+            .from("hire_experience")
+            .select("*")
+            .eq("is_active", true)
+            .order("order_index"),
+          supabase
+            .from("projects")
+            .select("*")
+            .eq("is_active", true)
+            .order("order_index"),
+        ]);
+
+      const profile = profileRes.data;
+      const skills = skillsRes.data || [];
+      const experiences = experiencesRes.data || [];
+      const projects = projectsRes.data || [];
+
+      // Create PDF
+      const pdf = new jsPDF();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      let yPosition = 20;
+
+      // Header
+      pdf.setFontSize(24);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(
+        resumeData.personalInfo.fullName ||
+          profile?.full_name ||
+          "Ramya Lakhani",
+        pageWidth / 2,
+        yPosition,
+        { align: "center" },
+      );
+      yPosition += 10;
+
+      pdf.setFontSize(14);
+      pdf.setFont("helvetica", "normal");
+      pdf.text(
+        profile?.role || "Full-Stack Developer",
+        pageWidth / 2,
+        yPosition,
+        { align: "center" },
+      );
+      yPosition += 15;
+
+      // Contact Information
+      pdf.setFontSize(10);
+      const contactInfo = [
+        resumeData.personalInfo.email || "lakhani.ramya.u@gmail.co",
+        resumeData.personalInfo.phone || "+91 7202800803",
+        resumeData.personalInfo.location || "India",
+      ].join(" | ");
+      pdf.text(contactInfo, pageWidth / 2, yPosition, { align: "center" });
+      yPosition += 20;
+
+      // Professional Summary
+      if (resumeData.personalInfo.summary || profile?.bio) {
+        pdf.setFontSize(14);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("PROFESSIONAL SUMMARY", 20, yPosition);
+        yPosition += 8;
+
+        pdf.setFontSize(10);
+        pdf.setFont("helvetica", "normal");
+        const summaryText =
+          resumeData.personalInfo.summary || profile?.bio || "";
+        const splitSummary = pdf.splitTextToSize(summaryText, pageWidth - 40);
+        pdf.text(splitSummary, 20, yPosition);
+        yPosition += splitSummary.length * 5 + 10;
+      }
+
+      // Skills
+      if (skills.length > 0) {
+        pdf.setFontSize(14);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("TECHNICAL SKILLS", 20, yPosition);
+        yPosition += 8;
+
+        const skillsByCategory = skills.reduce((acc: any, skill: any) => {
+          if (!acc[skill.category]) acc[skill.category] = [];
+          acc[skill.category].push(skill.name);
+          return acc;
+        }, {});
+
+        pdf.setFontSize(10);
+        Object.entries(skillsByCategory).forEach(
+          ([category, skillList]: [string, any]) => {
+            pdf.setFont("helvetica", "bold");
+            pdf.text(`${category}:`, 20, yPosition);
+            pdf.setFont("helvetica", "normal");
+            pdf.text(skillList.join(", "), 60, yPosition);
+            yPosition += 6;
+          },
+        );
+        yPosition += 10;
+      }
+
+      // Experience
+      if (experiences.length > 0) {
+        pdf.setFontSize(14);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("PROFESSIONAL EXPERIENCE", 20, yPosition);
+        yPosition += 8;
+
+        experiences.forEach((exp: any) => {
+          if (yPosition > pageHeight - 40) {
+            pdf.addPage();
+            yPosition = 20;
+          }
+
+          pdf.setFontSize(12);
+          pdf.setFont("helvetica", "bold");
+          pdf.text(exp.position, 20, yPosition);
+
+          pdf.setFont("helvetica", "normal");
+          const dateRange = `${new Date(exp.start_date).getFullYear()} - ${exp.is_current ? "Present" : new Date(exp.end_date).getFullYear()}`;
+          pdf.text(dateRange, pageWidth - 20, yPosition, { align: "right" });
+          yPosition += 6;
+
+          pdf.setFontSize(10);
+          pdf.setFont("helvetica", "italic");
+          pdf.text(`${exp.company} | ${exp.location}`, 20, yPosition);
+          yPosition += 8;
+
+          if (exp.description) {
+            pdf.setFont("helvetica", "normal");
+            const descText = pdf.splitTextToSize(
+              exp.description,
+              pageWidth - 40,
+            );
+            pdf.text(descText, 20, yPosition);
+            yPosition += descText.length * 4 + 5;
+          }
+
+          if (exp.achievements && exp.achievements.length > 0) {
+            exp.achievements.forEach((achievement: string) => {
+              if (achievement.trim()) {
+                const achText = pdf.splitTextToSize(
+                  `• ${achievement}`,
+                  pageWidth - 50,
+                );
+                pdf.text(achText, 25, yPosition);
+                yPosition += achText.length * 4 + 2;
+              }
+            });
+          }
+          yPosition += 8;
+        });
+      }
+
+      // Projects
+      if (projects.length > 0) {
+        if (yPosition > pageHeight - 60) {
+          pdf.addPage();
+          yPosition = 20;
+        }
+
+        pdf.setFontSize(14);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("KEY PROJECTS", 20, yPosition);
+        yPosition += 8;
+
+        projects.slice(0, 3).forEach((project: any) => {
+          if (yPosition > pageHeight - 30) {
+            pdf.addPage();
+            yPosition = 20;
+          }
+
+          pdf.setFontSize(12);
+          pdf.setFont("helvetica", "bold");
+          pdf.text(project.title, 20, yPosition);
+          yPosition += 6;
+
+          pdf.setFontSize(10);
+          pdf.setFont("helvetica", "normal");
+          if (project.description) {
+            const projText = pdf.splitTextToSize(
+              project.description,
+              pageWidth - 40,
+            );
+            pdf.text(projText, 20, yPosition);
+            yPosition += projText.length * 4 + 3;
+          }
+
+          if (project.tech_stack && project.tech_stack.length > 0) {
+            pdf.setFont("helvetica", "italic");
+            pdf.text(
+              `Technologies: ${project.tech_stack.join(", ")}`,
+              20,
+              yPosition,
+            );
+            yPosition += 8;
+          }
+        });
+      }
+
+      // Education (if provided)
+      if (resumeData.education.length > 0) {
+        if (yPosition > pageHeight - 40) {
+          pdf.addPage();
+          yPosition = 20;
+        }
+
+        pdf.setFontSize(14);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("EDUCATION", 20, yPosition);
+        yPosition += 8;
+
+        resumeData.education.forEach((edu: any) => {
+          pdf.setFontSize(10);
+          pdf.setFont("helvetica", "bold");
+          pdf.text(edu.degree, 20, yPosition);
+          pdf.setFont("helvetica", "normal");
+          pdf.text(edu.year, pageWidth - 20, yPosition, { align: "right" });
+          yPosition += 5;
+          pdf.text(edu.institution, 20, yPosition);
+          yPosition += 8;
+        });
+      }
+
+      // Save PDF
+      const fileName = `${(resumeData.personalInfo.fullName || "Resume").replace(/\s+/g, "_")}_Resume_${new Date().toISOString().split("T")[0]}.pdf`;
+      pdf.save(fileName);
+
+      logOperation("Resume PDF generated successfully");
+      toast({
+        title: "Resume Generated",
+        description: "Your PDF resume has been downloaded successfully.",
+      });
+    } catch (error: any) {
+      console.error("Error generating resume:", error);
+      logOperation(`Resume generation failed: ${error.message}`, false);
+      toast({
+        title: "Generation Failed",
+        description: "Failed to generate resume PDF. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingResume(false);
+    }
   };
 
   const containerVariants = {
@@ -551,6 +983,20 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               >
                 <Mail className="w-3 h-3" />
                 <span className="hidden sm:inline">Forms</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="resume"
+                className="flex items-center gap-1 text-xs px-2 py-2"
+              >
+                <FileText className="w-3 h-3" />
+                <span className="hidden sm:inline">Resume</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="profile"
+                className="flex items-center gap-1 text-xs px-2 py-2"
+              >
+                <Users className="w-3 h-3" />
+                <span className="hidden sm:inline">Profile</span>
               </TabsTrigger>
             </TabsList>
 
@@ -1481,6 +1927,225 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             {/* Hire View Editor */}
             <TabsContent value="hire-view" className="space-y-4">
               <HireViewEditor />
+            </TabsContent>
+
+            {/* Resume Management */}
+            <TabsContent value="resume" className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="w-5 h-5" />
+                      Resume Generator
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="text-center">
+                      <Button
+                        onClick={generateResumePDF}
+                        disabled={isGeneratingResume}
+                        className="bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white flex items-center gap-2"
+                      >
+                        {isGeneratingResume ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Download className="w-4 h-4" />
+                        )}
+                        {isGeneratingResume
+                          ? "Generating..."
+                          : "Generate PDF Resume"}
+                      </Button>
+                      <p className="text-sm text-gray-500 mt-2">
+                        Generates a professional PDF resume using your portfolio
+                        data
+                      </p>
+                    </div>
+                    <div className="border-t pt-4">
+                      <h4 className="font-medium mb-2">What's included:</h4>
+                      <ul className="text-sm text-gray-600 space-y-1">
+                        <li>• Professional summary from your profile</li>
+                        <li>• Technical skills organized by category</li>
+                        <li>• Work experience with achievements</li>
+                        <li>• Key projects with technologies used</li>
+                        <li>• Contact information</li>
+                        <li>
+                          • Custom education and certifications (if added)
+                        </li>
+                      </ul>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Manual Resume Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Professional Summary</Label>
+                        <Textarea
+                          value={resumeData.personalInfo.summary}
+                          onChange={(e) =>
+                            setResumeData({
+                              ...resumeData,
+                              personalInfo: {
+                                ...resumeData.personalInfo,
+                                summary: e.target.value,
+                              },
+                            })
+                          }
+                          placeholder="Write a brief professional summary..."
+                          rows={3}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>LinkedIn URL</Label>
+                          <Input
+                            value={resumeData.personalInfo.linkedin}
+                            onChange={(e) =>
+                              setResumeData({
+                                ...resumeData,
+                                personalInfo: {
+                                  ...resumeData.personalInfo,
+                                  linkedin: e.target.value,
+                                },
+                              })
+                            }
+                            placeholder="https://linkedin.com/in/..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>GitHub URL</Label>
+                          <Input
+                            value={resumeData.personalInfo.github}
+                            onChange={(e) =>
+                              setResumeData({
+                                ...resumeData,
+                                personalInfo: {
+                                  ...resumeData.personalInfo,
+                                  github: e.target.value,
+                                },
+                              })
+                            }
+                            placeholder="https://github.com/..."
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Languages</Label>
+                        <Input
+                          value={resumeData.languages.join(", ")}
+                          onChange={(e) =>
+                            setResumeData({
+                              ...resumeData,
+                              languages: e.target.value
+                                .split(", ")
+                                .filter((lang) => lang.trim()),
+                            })
+                          }
+                          placeholder="English, Hindi, etc."
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Interests & Hobbies</Label>
+                        <Input
+                          value={resumeData.interests}
+                          onChange={(e) =>
+                            setResumeData({
+                              ...resumeData,
+                              interests: e.target.value,
+                            })
+                          }
+                          placeholder="Photography, Travel, Open Source..."
+                        />
+                      </div>
+                    </div>
+
+                    <Button onClick={saveResumeData} className="w-full">
+                      <Save className="w-4 h-4 mr-2" />
+                      Save Resume Data
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            {/* Profile Management */}
+            <TabsContent value="profile" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    Profile Image Management
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex flex-col items-center space-y-4">
+                    {/* Current Profile Image */}
+                    <div className="relative">
+                      <div className="w-32 h-32 rounded-full overflow-hidden bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center">
+                        {profileImage ? (
+                          <img
+                            src={profileImage}
+                            alt="Profile"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-white text-4xl font-bold">
+                            RL
+                          </span>
+                        )}
+                      </div>
+                      {isUploadingImage && (
+                        <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
+                          <Loader2 className="w-8 h-8 text-white animate-spin" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Upload Button */}
+                    <div className="text-center">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                        id="profile-image-upload"
+                        disabled={isUploadingImage}
+                      />
+                      <label
+                        htmlFor="profile-image-upload"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white rounded-lg cursor-pointer transition-all duration-200 disabled:opacity-50"
+                      >
+                        <Upload className="w-4 h-4" />
+                        {isUploadingImage ? "Uploading..." : "Upload New Image"}
+                      </label>
+                      <p className="text-sm text-gray-500 mt-2">
+                        Supported formats: JPG, PNG, GIF (Max 5MB)
+                      </p>
+                    </div>
+
+                    {/* Usage Information */}
+                    <div className="bg-blue-50 p-4 rounded-lg w-full">
+                      <h4 className="font-medium text-blue-900 mb-2">
+                        Where this image appears:
+                      </h4>
+                      <ul className="text-sm text-blue-700 space-y-1">
+                        <li>• Landing page profile section</li>
+                        <li>• Hire view hero section</li>
+                        <li>• Portfolio experience page</li>
+                        <li>• Chat widget avatar</li>
+                        <li>• Generated PDF resume</li>
+                      </ul>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         </motion.div>

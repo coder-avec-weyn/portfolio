@@ -383,13 +383,24 @@ export default function PortfolioExperience({
         >
           <motion.div variants={itemVariants} className="mb-8">
             <div
-              className={`w-40 h-40 mx-auto rounded-full mb-8 shadow-2xl bg-gradient-to-br ${
+              className={`w-40 h-40 mx-auto rounded-full mb-8 shadow-2xl bg-gradient-to-br overflow-hidden ${
                 isDarkMode
                   ? "from-purple-500 to-cyan-500"
                   : "from-purple-600 to-blue-600"
               } flex items-center justify-center text-white text-6xl font-bold`}
             >
-              JD
+              {profile?.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt={profile.full_name || "Profile"}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                profile?.full_name
+                  ?.split(" ")
+                  .map((n) => n[0])
+                  .join("") || "RL"
+              )}
             </div>
           </motion.div>
 

@@ -48,6 +48,16 @@ interface ChatWidgetProps {
   className?: string;
 }
 
+interface Profile {
+  full_name: string;
+  bio: string;
+  role: string;
+  avatar_url?: string;
+  skills?: string[];
+  projects?: any[];
+  experience?: any[];
+}
+
 const TypingIndicator = () => {
   return (
     <div className="flex items-center space-x-1 p-3">
@@ -102,8 +112,16 @@ const MessageBubble = ({
     >
       {/* Avatar for bot messages */}
       {!message.isUser && (
-        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center mr-3 mt-1 flex-shrink-0">
-          <Bot className="w-4 h-4 text-white" />
+        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center mr-3 mt-1 flex-shrink-0 overflow-hidden">
+          {profile.avatar_url ? (
+            <img
+              src={profile.avatar_url}
+              alt={profile.full_name || "AI Assistant"}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <Bot className="w-4 h-4 text-white" />
+          )}
         </div>
       )}
 
@@ -437,8 +455,16 @@ export default function ChatWidget({ profile, className }: ChatWidgetProps) {
             <div className="p-4 border-b border-white/10 bg-gradient-to-r from-purple-600/20 to-cyan-600/20">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center relative">
-                    <Sparkles className="w-4 h-4 text-white" />
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center relative overflow-hidden">
+                    {profile.avatar_url ? (
+                      <img
+                        src={profile.avatar_url}
+                        alt={profile.full_name || "AI Assistant"}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Sparkles className="w-4 h-4 text-white" />
+                    )}
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-900 animate-pulse"></div>
                   </div>
                   <div>
