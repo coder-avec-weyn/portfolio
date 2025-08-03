@@ -185,11 +185,55 @@ export default function HireViewEditor() {
   const channelsRef = useRef<any[]>([]);
   const { toast } = useToast();
 
+  // Enhanced database connection test
+  const testDatabaseConnection = async () => {
+    try {
+      console.log("Testing database connection...");
+      
+      // Test each table individually
+      const tables = [
+        "hire_sections",
+        "hire_skills", 
+        "hire_experience",
+        "hire_contact_fields"
+      ];
+      
+      for (const table of tables) {
+        const { data, error } = await supabase
+          .from(table)
+          .select("id")
+          .limit(1);
+          
+        if (error) {
+          console.error(`Error accessing ${table}:`, error);
+          throw new Error(`Cannot access ${table}: ${error.message}`);
+        }
+        
+        console.log(`✓ ${table} table accessible`);
+      }
+      
+      console.log("✓ All database tables accessible");
+      return true;
+    } catch (error: any) {
+      console.error("Database connection test failed:", error);
+      setError(`Database connection failed: ${error.message}`);
+      return false;
+    }
+  };
+
   const fetchHireViewData = useCallback(
     async (showToast = false) => {
       try {
         setIsLoading(true);
         setError(null);
+
+        // Test database connection first
+        const connectionOk = await testDatabaseConnection();
+        if (!connectionOk) {
+          throw new Error("Database connection failed");
+        }
+
+        console.log("Fetching hire view data...");
 
         const [sectionsRes, skillsRes, experiencesRes, contactFieldsRes] =
           await Promise.all([
@@ -218,11 +262,24 @@ export default function HireViewEditor() {
           experiencesRes.error,
           contactFieldsRes.error,
         ].filter(Boolean);
+        
         if (errors.length > 0) {
+          console.error("Database fetch errors:", errors);
           throw new Error(
             `Database errors: ${errors.map((e) => e?.message).join(", ")}`,
           );
         }
+
+        // Log data counts
+        console.log("Data fetched successfully:", {
+          sections: sectionsRes.data?.length || 0,
+          skills: skillsRes.data?.length || 0,
+          experiences: experiencesRes.data?.length || 0,
+          contactFields: contactFieldsRes.data?.length || 0,
+        });
+
+        // Clear optimistic updates set when refreshing data
+        setOptimisticUpdates(new Set());
 
         setSections(sectionsRes.data || []);
         setSkills(skillsRes.data || []);
@@ -372,45 +429,180 @@ export default function HireViewEditor() {
   ) => {
     const originalSection = sections.find((s) => s.id === sectionId);
     if (!originalSection) {
-      console.error(`Section with id ${sectionId} not found`);
+      console.error(`Section with id ${sectionId} not found in local state`);
+      toast({
+        title: "Update Failed",
+        description: "Section not found in local state. Please refresh the page.",
+        variant: "destructive",
+      });
       return;
     }
 
-    try {
-      // Validate updates if they include critical fields
-      if (updates.content || updates.section_type) {
-        const updatedSection = { ...originalSection, ...updates };
-        validateSectionData(updatedSection);
-      }
+    console.log(`Updating section ${sectionId}:`, updates);
 
-      // Database update FIRST (no optimistic updates to avoid conflicts)
-      const { data, error } = await supabase
+    try {
+      // Create a complete section object with updates
+      const updatedSection = { ...originalSection, ...updates };
+
+      // Always validate the complete section data
+      validateSectionData(updatedSection);
+
+      // Apply optimistic update after validation passes
+      setSections((prev) =>
+        prev.map((section) =>
+          section.id === sectionId ? updatedSection : section,
+        ),
+      );
+
+      // Prepare update data with timestamp
+      const updateData = {
+        ...updates,
+        updated_at: new Date().toISOString(),
+      };
+
+      console.log(`Sending update to database for section ${sectionId}:`, updateData);
+
+      // Database update with proper error handling
+      const { data, error, count } = await supabase
         .from("hire_sections")
-        .update({ ...updates, updated_at: new Date().toISOString() })
+        .update(updateData)
         .eq("id", sectionId)
-        .select()
-        .single();
+        .select("*");
 
       if (error) {
         console.error("Database update error:", error);
-        throw error;
+        // Revert optimistic update
+        setSections((prev) =>
+          prev.map((section) =>
+            section.id === sectionId ? originalSection : section,
+          ),
+        );
+        throw new Error(`Database error: ${error.message}`);
+      }
+
+      console.log(`Database response for section ${sectionId}:`, { data, count });
+
+      // Check if any rows were affected
+      if (!data || data.length === 0) {
+        console.error("No rows updated - section may not exist");
+
+        // Check if section exists
+        const { data: existingSection, error: checkError } = await supabase
+          .from("hire_sections")
+          .select("id")
+          .eq("id", sectionId)
+          .maybeSingle();
+
+        if (checkError) {
+          console.error("Error checking section existence:", checkError);
+          // Revert optimistic update
+          setSections((prev) =>
+            prev.map((section) =>
+              section.id === sectionId ? originalSection : section,
+            ),
+          );
+          throw new Error(
+            `Failed to verify section existence: ${checkError.message}`,
+          );
+        }
+
+        if (!existingSection) {
+          console.error("Section no longer exists in database");
+          // Revert optimistic update
+          setSections((prev) =>
+            prev.map((section) =>
+              section.id === sectionId ? originalSection : section,
+            ),
+          );
+          await fetchHireViewData();
+          throw new Error(
+            `Section with id ${sectionId} no longer exists in the database. Data has been refreshed.`,
+          );
+        }
+
+        // If we get here, the section exists but wasn't updated
+        // Try a direct update with all fields
+        console.log("Retrying section update with full data...");
+        const { data: retryData, error: retryError } = await supabase
+          .from("hire_sections")
+          .update({
+            section_type: updatedSection.section_type,
+            title: updatedSection.title,
+            content: updatedSection.content,
+            order_index: updatedSection.order_index,
+            is_active: updatedSection.is_active,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", sectionId)
+          .select("*");
+
+        if (retryError) {
+          console.error("Retry section update error:", retryError);
+          // Revert optimistic update
+          setSections((prev) =>
+            prev.map((section) =>
+              section.id === sectionId ? originalSection : section,
+            ),
+          );
+          throw new Error(`Database retry error: ${retryError.message}`);
+        }
+
+        if (!retryData || retryData.length === 0) {
+          // Still no success, revert and throw error
+          setSections((prev) =>
+            prev.map((section) =>
+              section.id === sectionId ? originalSection : section,
+            ),
+          );
+          throw new Error(
+            "Update operation failed after retry - no rows were updated",
+          );
+        }
+
+        // Update local state with retry data
+        const updatedSectionData = retryData[0];
+        setSections((prev) =>
+          prev.map((section) =>
+            section.id === sectionId ? updatedSectionData : section,
+          ),
+        );
+
+        console.log(
+          `Section ${sectionId} updated successfully after retry:`,
+          updatedSectionData,
+        );
+        toast({
+          title: "Success",
+          description: "Section updated successfully.",
+        });
+        return;
       }
 
       // Update local state with server data
-      if (data) {
-        setSections((prev) =>
-          prev.map((section) => (section.id === sectionId ? data : section)),
-        );
+      const updatedSectionData = data[0];
+      setSections((prev) =>
+        prev.map((section) =>
+          section.id === sectionId ? updatedSectionData : section,
+        ),
+      );
 
-        toast({
-          title: "Section Updated",
-          description: "Changes saved successfully.",
-        });
-      }
+      console.log(
+        `Section ${sectionId} updated successfully:`,
+        updatedSectionData,
+      );
 
-      console.log(`Section ${sectionId} updated successfully:`, data);
+      toast({
+        title: "Success",
+        description: "Section updated successfully.",
+      });
     } catch (validationError: any) {
       console.error("Section update failed:", validationError);
+      // Ensure we revert optimistic update on any error
+      setSections((prev) =>
+        prev.map((section) =>
+          section.id === sectionId ? originalSection : section,
+        ),
+      );
       toast({
         title: "Update Failed",
         description: validationError.message || "Failed to update section",
@@ -419,7 +611,14 @@ export default function HireViewEditor() {
     }
   };
 
-  // Immediate save for real-time editing (removed debouncing to fix race conditions)
+  // Debounced save for real-time editing to prevent race conditions
+  const debouncedUpdateSection = useCallback(
+    debounce(async (sectionId: string, updates: Partial<HireSection>) => {
+      await updateSection(sectionId, updates);
+    }, 1000), // Increased debounce time to reduce API calls
+    [updateSection],
+  );
+
   const handleSectionFieldChange = async (
     sectionId: string,
     field: string,
@@ -432,14 +631,8 @@ export default function HireViewEditor() {
       ),
     );
 
-    // Immediate database save
-    try {
-      await updateSection(sectionId, { [field]: value });
-    } catch (error) {
-      console.error("Field update failed:", error);
-      // Revert UI change on failure
-      fetchHireViewData();
-    }
+    // Debounced database save to prevent race conditions
+    debouncedUpdateSection(sectionId, { [field]: value });
   };
 
   const handleSectionContentChange = async (
@@ -448,7 +641,10 @@ export default function HireViewEditor() {
     value: any,
   ) => {
     const section = sections.find((s) => s.id === sectionId);
-    if (!section) return;
+    if (!section) {
+      console.error(`Section ${sectionId} not found for content update`);
+      return;
+    }
 
     const updatedContent = { ...section.content, [contentField]: value };
 
@@ -459,14 +655,8 @@ export default function HireViewEditor() {
       ),
     );
 
-    // Immediate database save
-    try {
-      await updateSection(sectionId, { content: updatedContent });
-    } catch (error) {
-      console.error("Content update failed:", error);
-      // Revert UI change on failure
-      fetchHireViewData();
-    }
+    // Debounced database save to prevent race conditions
+    debouncedUpdateSection(sectionId, { content: updatedContent });
   };
 
   const addSkill = async () => {
@@ -483,24 +673,35 @@ export default function HireViewEditor() {
       // Validate skill data before sending to database
       validateSkillData({ ...newSkillData, id: "temp" });
 
+      // Show loading state
+      setIsSaving(true);
+      toast({
+        title: "Adding skill",
+        description: "Please wait...",
+      });
+
       const { data, error } = await supabase
         .from("hire_skills")
-        .insert(newSkillData)
-        .select()
-        .single();
+        .insert([newSkillData])
+        .select();
 
       if (error) {
         console.error("Add skill error:", error);
-        throw error;
+        throw new Error(`Database error: ${error.message}`);
       }
 
-      if (data) {
-        setSkills((prev) => [...prev, data]);
-        console.log("Skill added successfully:", data);
+      if (data && data.length > 0) {
+        const newSkill = data[0];
+        setSkills((prev) => [...prev, newSkill]);
+        console.log("Skill added successfully:", newSkill);
         toast({
           title: "Skill Added",
           description: "New skill has been added successfully.",
         });
+      } else {
+        throw new Error(
+          "No data returned from skill insertion - insert may have failed",
+        );
       }
     } catch (validationError: any) {
       console.error("Add skill failed:", validationError);
@@ -509,49 +710,157 @@ export default function HireViewEditor() {
         description: validationError.message || "Failed to add new skill",
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const updateSkill = async (skillId: string, updates: Partial<HireSkill>) => {
     const originalSkill = skills.find((s) => s.id === skillId);
     if (!originalSkill) {
-      console.error(`Skill with id ${skillId} not found`);
+      console.error(`Skill with id ${skillId} not found in local state`);
+      toast({
+        title: "Update Failed",
+        description: "Skill not found. Please refresh the page.",
+        variant: "destructive",
+      });
       return;
     }
 
+    console.log(`Updating skill ${skillId}:`, updates);
+
     try {
-      // Validate updates
+      // Create a complete skill object with updates for validation
       const updatedSkill = { ...originalSkill, ...updates };
+
+      // Validate the complete skill data before proceeding
       validateSkillData(updatedSkill);
 
-      // Database update FIRST
-      const { data, error } = await supabase
+      // Only after validation passes, apply optimistic update
+      setSkills((prev) =>
+        prev.map((skill) => (skill.id === skillId ? updatedSkill : skill)),
+      );
+
+      console.log(`Sending skill update to database for ${skillId}:`, updates);
+
+      // Database update with proper error handling
+      const { data, error, count } = await supabase
         .from("hire_skills")
         .update(updates)
         .eq("id", skillId)
-        .select()
-        .single();
+        .select("*");
 
       if (error) {
         console.error("Skill update error:", error);
-        throw error;
+        // Revert optimistic update on database error
+        setSkills((prev) =>
+          prev.map((skill) => (skill.id === skillId ? originalSkill : skill)),
+        );
+        throw new Error(`Database error: ${error.message}`);
+      }
+
+      console.log(`Database response for skill ${skillId}:`, { data, count });
+
+      // Check if any rows were updated
+      if (!data || data.length === 0) {
+        console.error("No rows updated - skill may not exist");
+
+        // Check if skill exists in database
+        const { data: existingSkill, error: checkError } = await supabase
+          .from("hire_skills")
+          .select("id")
+          .eq("id", skillId)
+          .maybeSingle();
+
+        if (checkError) {
+          console.error("Error checking skill existence:", checkError);
+          // Revert optimistic update
+          setSkills((prev) =>
+            prev.map((skill) => (skill.id === skillId ? originalSkill : skill)),
+          );
+          throw new Error(
+            `Failed to verify skill existence: ${checkError.message}`,
+          );
+        }
+
+        if (!existingSkill) {
+          console.error("Skill no longer exists in database");
+          await fetchHireViewData();
+          throw new Error(
+            `Skill with id ${skillId} no longer exists in the database. Data has been refreshed.`,
+          );
+        }
+
+        // Try a direct update with all fields
+        console.log("Retrying skill update with full data...");
+        const { data: retryData, error: retryError } = await supabase
+          .from("hire_skills")
+          .update({
+            name: updatedSkill.name,
+            category: updatedSkill.category,
+            proficiency: updatedSkill.proficiency,
+            color: updatedSkill.color,
+            order_index: updatedSkill.order_index,
+            is_active: updatedSkill.is_active,
+          })
+          .eq("id", skillId)
+          .select("*");
+
+        if (retryError) {
+          console.error("Retry skill update error:", retryError);
+          // Revert optimistic update
+          setSkills((prev) =>
+            prev.map((skill) => (skill.id === skillId ? originalSkill : skill)),
+          );
+          throw new Error(`Database retry error: ${retryError.message}`);
+        }
+
+        if (!retryData || retryData.length === 0) {
+          // Still no success, revert and throw error
+          setSkills((prev) =>
+            prev.map((skill) => (skill.id === skillId ? originalSkill : skill)),
+          );
+          throw new Error(
+            "Update operation failed after retry - no rows were updated",
+          );
+        }
+
+        // Update local state with retry data
+        const updatedSkillData = retryData[0];
+        setSkills((prev) =>
+          prev.map((skill) =>
+            skill.id === skillId ? updatedSkillData : skill,
+          ),
+        );
+
+        console.log(
+          `Skill ${skillId} updated successfully after retry:`,
+          updatedSkillData,
+        );
+        toast({
+          title: "Success",
+          description: "Skill updated successfully.",
+        });
+        return;
       }
 
       // Update local state with server data
-      if (data) {
-        setSkills((prev) =>
-          prev.map((skill) => (skill.id === skillId ? data : skill)),
-        );
+      const updatedSkillData = data[0];
+      setSkills((prev) =>
+        prev.map((skill) => (skill.id === skillId ? updatedSkillData : skill)),
+      );
 
-        toast({
-          title: "Skill Updated",
-          description: "Skill changes saved successfully.",
-        });
-      }
-
-      console.log(`Skill ${skillId} updated successfully:`, data);
+      console.log(`Skill ${skillId} updated successfully:`, updatedSkillData);
+      toast({
+        title: "Success",
+        description: "Skill updated successfully.",
+      });
     } catch (validationError: any) {
       console.error("Skill update failed:", validationError);
+      // Ensure we revert optimistic update on any error
+      setSkills((prev) =>
+        prev.map((skill) => (skill.id === skillId ? originalSkill : skill)),
+      );
       toast({
         title: "Skill Update Failed",
         description: validationError.message || "Failed to update skill",
@@ -564,10 +873,18 @@ export default function HireViewEditor() {
     const skillToDelete = skills.find((s) => s.id === skillId);
     if (!skillToDelete) {
       console.error(`Skill with id ${skillId} not found`);
+      toast({
+        title: "Delete Failed",
+        description: "Skill not found. Please refresh the page.",
+        variant: "destructive",
+      });
       return;
     }
 
     try {
+      // Show loading state
+      setIsSaving(true);
+
       // Immediate optimistic update
       setSkills((prev) => prev.filter((skill) => skill.id !== skillId));
 
@@ -584,7 +901,7 @@ export default function HireViewEditor() {
             (a, b) => a.order_index - b.order_index,
           ),
         );
-        throw error;
+        throw new Error(`Database error: ${error.message}`);
       }
 
       console.log(`Skill ${skillId} deleted successfully`);
@@ -599,6 +916,8 @@ export default function HireViewEditor() {
         description: error.message || "Failed to delete skill",
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -617,26 +936,48 @@ export default function HireViewEditor() {
         is_active: true,
       };
 
+      // Validate experience data before sending to database
+      validateExperienceData({ ...newExperience, id: "temp" });
+
+      // Show loading state
+      setIsSaving(true);
+      toast({
+        title: "Adding experience",
+        description: "Please wait...",
+      });
+
       const { data, error } = await supabase
         .from("hire_experience")
-        .insert(newExperience)
-        .select()
-        .single();
+        .insert([newExperience])
+        .select();
 
-      if (error) throw error;
-      if (data) setExperiences((prev) => [...prev, data]);
+      if (error) {
+        console.error("Add experience error:", error);
+        throw new Error(`Database error: ${error.message}`);
+      }
 
-      toast({
-        title: "Experience added",
-        description: "New experience has been added successfully.",
-      });
-    } catch (error) {
+      if (data && data.length > 0) {
+        const newExp = data[0];
+        setExperiences((prev) => [...prev, newExp]);
+        console.log("Experience added successfully:", newExp);
+        toast({
+          title: "Experience added",
+          description: "New experience has been added successfully.",
+        });
+      } else {
+        throw new Error(
+          "No data returned from experience insertion - insert may have failed",
+        );
+      }
+    } catch (error: any) {
       console.error("Error adding experience:", error);
       toast({
         title: "Error adding experience",
-        description: "Failed to add new experience.",
+        description: error.message || "Failed to add new experience.",
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -644,49 +985,195 @@ export default function HireViewEditor() {
     expId: string,
     updates: Partial<HireExperience>,
   ) => {
+    const originalExp = experiences.find((e) => e.id === expId);
+    if (!originalExp) {
+      console.error(`Experience with id ${expId} not found in local state`);
+      toast({
+        title: "Update Failed",
+        description: "Experience not found. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      const { error } = await supabase
+      // Create a complete experience object with updates
+      const updatedExp = { ...originalExp, ...updates };
+
+      // Validate the complete experience data before proceeding
+      validateExperienceData(updatedExp);
+
+      // Only after validation passes, apply optimistic update
+      setExperiences((prev) =>
+        prev.map((exp) => (exp.id === expId ? updatedExp : exp)),
+      );
+
+      const { data, error } = await supabase
         .from("hire_experience")
         .update(updates)
-        .eq("id", expId);
+        .eq("id", expId)
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Experience update error:", error);
+        // Revert optimistic update
+        setExperiences((prev) =>
+          prev.map((exp) => (exp.id === expId ? originalExp : exp)),
+        );
+        throw new Error(`Database error: ${error.message}`);
+      }
 
+      // Check if any rows were updated
+      if (!data || data.length === 0) {
+        console.error("No rows updated - experience may not exist");
+
+        // Check if experience exists
+        const { data: existingExp, error: checkError } = await supabase
+          .from("hire_experience")
+          .select("id")
+          .eq("id", expId)
+          .single();
+
+        if (checkError) {
+          if (checkError.code === "PGRST116") {
+            // Record not found
+            console.error("Experience no longer exists in database");
+            // Revert optimistic update
+            setExperiences((prev) =>
+              prev.map((exp) => (exp.id === expId ? originalExp : exp)),
+            );
+            await fetchHireViewData();
+            throw new Error(
+              `Experience with id ${expId} no longer exists in the database. Data has been refreshed.`,
+            );
+          } else {
+            console.error("Error checking experience existence:", checkError);
+            // Revert optimistic update
+            setExperiences((prev) =>
+              prev.map((exp) => (exp.id === expId ? originalExp : exp)),
+            );
+            throw new Error(
+              `Failed to verify experience existence: ${checkError.message}`,
+            );
+          }
+        }
+
+        // If we get here, the experience exists but wasn't updated (unlikely)
+        // Try again with a different approach - full update
+        const { data: retryData, error: retryError } = await supabase
+          .from("hire_experience")
+          .update(updatedExp)
+          .eq("id", expId)
+          .select();
+
+        if (retryError) {
+          console.error("Retry experience update error:", retryError);
+          // Revert optimistic update
+          setExperiences((prev) =>
+            prev.map((exp) => (exp.id === expId ? originalExp : exp)),
+          );
+          throw new Error(`Database retry error: ${retryError.message}`);
+        }
+
+        if (!retryData || retryData.length === 0) {
+          // Still no success, revert and throw error
+          setExperiences((prev) =>
+            prev.map((exp) => (exp.id === expId ? originalExp : exp)),
+          );
+          throw new Error(
+            "Update operation failed after retry - no rows were updated",
+          );
+        }
+
+        // Update local state with retry data
+        const updatedExpData = retryData[0];
+        setExperiences((prev) =>
+          prev.map((exp) => (exp.id === expId ? updatedExpData : exp)),
+        );
+
+        console.log(
+          `Experience ${expId} updated successfully after retry:`,
+          updatedExpData,
+        );
+        toast({
+          title: "Success",
+          description: "Experience updated successfully.",
+        });
+        return;
+      }
+
+      // Update local state with server data
+      const updatedExpData = data[0];
       setExperiences((prev) =>
-        prev.map((exp) => (exp.id === expId ? { ...exp, ...updates } : exp)),
+        prev.map((exp) => (exp.id === expId ? updatedExpData : exp)),
       );
-    } catch (error) {
+
+      console.log(`Experience ${expId} updated successfully:`, updatedExpData);
+      toast({
+        title: "Success",
+        description: "Experience updated successfully.",
+      });
+    } catch (error: any) {
       console.error("Error updating experience:", error);
+      // Ensure we revert optimistic update on any error
+      setExperiences((prev) =>
+        prev.map((exp) => (exp.id === expId ? originalExp : exp)),
+      );
       toast({
         title: "Error updating experience",
-        description: "Failed to save experience changes.",
+        description: error.message || "Failed to save experience changes.",
         variant: "destructive",
       });
     }
   };
 
   const deleteExperience = async (expId: string) => {
+    const expToDelete = experiences.find((e) => e.id === expId);
+    if (!expToDelete) {
+      console.error(`Experience with id ${expId} not found`);
+      toast({
+        title: "Delete Failed",
+        description: "Experience not found. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
+      // Show loading state
+      setIsSaving(true);
+
+      // Immediate optimistic update
+      setExperiences((prev) => prev.filter((exp) => exp.id !== expId));
+
       const { error } = await supabase
         .from("hire_experience")
         .delete()
         .eq("id", expId);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Delete experience error:", error);
+        // Rollback optimistic update
+        setExperiences((prev) =>
+          [...prev, expToDelete].sort((a, b) => a.order_index - b.order_index),
+        );
+        throw new Error(`Database error: ${error.message}`);
+      }
 
-      setExperiences((prev) => prev.filter((exp) => exp.id !== expId));
-
+      console.log(`Experience ${expId} deleted successfully`);
       toast({
         title: "Experience deleted",
         description: "Experience has been removed successfully.",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting experience:", error);
       toast({
         title: "Error deleting experience",
-        description: "Failed to delete experience.",
+        description: error.message || "Failed to delete experience.",
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -701,26 +1188,48 @@ export default function HireViewEditor() {
         is_active: true,
       };
 
+      // Validate contact field data before sending to database
+      validateContactFieldData({ ...newField, id: "temp" });
+
+      // Show loading state
+      setIsSaving(true);
+      toast({
+        title: "Adding contact field",
+        description: "Please wait...",
+      });
+
       const { data, error } = await supabase
         .from("hire_contact_fields")
-        .insert(newField)
-        .select()
-        .single();
+        .insert([newField])
+        .select();
 
-      if (error) throw error;
-      if (data) setContactFields((prev) => [...prev, data]);
+      if (error) {
+        console.error("Add contact field error:", error);
+        throw new Error(`Database error: ${error.message}`);
+      }
 
-      toast({
-        title: "Contact field added",
-        description: "New contact field has been added successfully.",
-      });
-    } catch (error) {
+      if (data && data.length > 0) {
+        const newContactField = data[0];
+        setContactFields((prev) => [...prev, newContactField]);
+        console.log("Contact field added successfully:", newContactField);
+        toast({
+          title: "Contact field added",
+          description: "New contact field has been added successfully.",
+        });
+      } else {
+        throw new Error(
+          "No data returned from contact field insertion - insert may have failed",
+        );
+      }
+    } catch (error: any) {
       console.error("Error adding contact field:", error);
       toast({
         title: "Error adding contact field",
-        description: "Failed to add new contact field.",
+        description: error.message || "Failed to add new contact field.",
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -728,51 +1237,211 @@ export default function HireViewEditor() {
     fieldId: string,
     updates: Partial<HireContactField>,
   ) => {
+    const originalField = contactFields.find((f) => f.id === fieldId);
+    if (!originalField) {
+      console.error(
+        `Contact field with id ${fieldId} not found in local state`,
+      );
+      toast({
+        title: "Update Failed",
+        description: "Contact field not found. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      const { error } = await supabase
+      // Create a complete field object with updates
+      const updatedField = { ...originalField, ...updates };
+
+      // Validate the complete field data before proceeding
+      validateContactFieldData(updatedField);
+
+      // Only after validation passes, apply optimistic update
+      setContactFields((prev) =>
+        prev.map((field) => (field.id === fieldId ? updatedField : field)),
+      );
+
+      const { data, error } = await supabase
         .from("hire_contact_fields")
         .update(updates)
-        .eq("id", fieldId);
+        .eq("id", fieldId)
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Contact field update error:", error);
+        // Revert optimistic update
+        setContactFields((prev) =>
+          prev.map((field) => (field.id === fieldId ? originalField : field)),
+        );
+        throw new Error(`Database error: ${error.message}`);
+      }
 
+      // Check if any rows were updated
+      if (!data || data.length === 0) {
+        console.error("No rows updated - contact field may not exist");
+
+        // Check if contact field exists
+        const { data: existingField, error: checkError } = await supabase
+          .from("hire_contact_fields")
+          .select("id")
+          .eq("id", fieldId)
+          .single();
+
+        if (checkError) {
+          if (checkError.code === "PGRST116") {
+            // Record not found
+            console.error("Contact field no longer exists in database");
+            // Revert optimistic update
+            setContactFields((prev) =>
+              prev.map((field) =>
+                field.id === fieldId ? originalField : field,
+              ),
+            );
+            await fetchHireViewData();
+            throw new Error(
+              `Contact field with id ${fieldId} no longer exists in the database. Data has been refreshed.`,
+            );
+          } else {
+            console.error(
+              "Error checking contact field existence:",
+              checkError,
+            );
+            // Revert optimistic update
+            setContactFields((prev) =>
+              prev.map((field) =>
+                field.id === fieldId ? originalField : field,
+              ),
+            );
+            throw new Error(
+              `Failed to verify contact field existence: ${checkError.message}`,
+            );
+          }
+        }
+
+        // If we get here, the field exists but wasn't updated (unlikely)
+        // Try again with a different approach - full update
+        const { data: retryData, error: retryError } = await supabase
+          .from("hire_contact_fields")
+          .update(updatedField)
+          .eq("id", fieldId)
+          .select();
+
+        if (retryError) {
+          console.error("Retry contact field update error:", retryError);
+          // Revert optimistic update
+          setContactFields((prev) =>
+            prev.map((field) => (field.id === fieldId ? originalField : field)),
+          );
+          throw new Error(`Database retry error: ${retryError.message}`);
+        }
+
+        if (!retryData || retryData.length === 0) {
+          // Still no success, revert and throw error
+          setContactFields((prev) =>
+            prev.map((field) => (field.id === fieldId ? originalField : field)),
+          );
+          throw new Error(
+            "Update operation failed after retry - no rows were updated",
+          );
+        }
+
+        // Update local state with retry data
+        const updatedFieldData = retryData[0];
+        setContactFields((prev) =>
+          prev.map((field) =>
+            field.id === fieldId ? updatedFieldData : field,
+          ),
+        );
+
+        console.log(
+          `Contact field ${fieldId} updated successfully after retry:`,
+          updatedFieldData,
+        );
+        toast({
+          title: "Success",
+          description: "Contact field updated successfully.",
+        });
+        return;
+      }
+
+      // Update local state with server data
+      const updatedFieldData = data[0];
       setContactFields((prev) =>
-        prev.map((field) =>
-          field.id === fieldId ? { ...field, ...updates } : field,
-        ),
+        prev.map((field) => (field.id === fieldId ? updatedFieldData : field)),
       );
-    } catch (error) {
+
+      console.log(
+        `Contact field ${fieldId} updated successfully:`,
+        updatedFieldData,
+      );
+      toast({
+        title: "Success",
+        description: "Contact field updated successfully.",
+      });
+    } catch (error: any) {
       console.error("Error updating contact field:", error);
+      // Ensure we revert optimistic update on any error
+      setContactFields((prev) =>
+        prev.map((field) => (field.id === fieldId ? originalField : field)),
+      );
       toast({
         title: "Error updating contact field",
-        description: "Failed to save contact field changes.",
+        description: error.message || "Failed to save contact field changes.",
         variant: "destructive",
       });
     }
   };
 
   const deleteContactField = async (fieldId: string) => {
+    const fieldToDelete = contactFields.find((f) => f.id === fieldId);
+    if (!fieldToDelete) {
+      console.error(`Contact field with id ${fieldId} not found`);
+      toast({
+        title: "Delete Failed",
+        description: "Contact field not found. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
+      // Show loading state
+      setIsSaving(true);
+
+      // Immediate optimistic update
+      setContactFields((prev) => prev.filter((field) => field.id !== fieldId));
+
       const { error } = await supabase
         .from("hire_contact_fields")
         .delete()
         .eq("id", fieldId);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Delete contact field error:", error);
+        // Rollback optimistic update
+        setContactFields((prev) =>
+          [...prev, fieldToDelete].sort(
+            (a, b) => a.order_index - b.order_index,
+          ),
+        );
+        throw new Error(`Database error: ${error.message}`);
+      }
 
-      setContactFields((prev) => prev.filter((field) => field.id !== fieldId));
-
+      console.log(`Contact field ${fieldId} deleted successfully`);
       toast({
         title: "Contact field deleted",
         description: "Contact field has been removed successfully.",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting contact field:", error);
       toast({
         title: "Error deleting contact field",
-        description: "Failed to delete contact field.",
+        description: error.message || "Failed to delete contact field.",
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
