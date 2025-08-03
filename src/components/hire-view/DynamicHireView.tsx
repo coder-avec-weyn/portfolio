@@ -28,6 +28,8 @@ import { supabase } from "../../../supabase/supabase";
 import { useToast } from "@/components/ui/use-toast";
 import { LoadingSpinner, LoadingScreen } from "@/components/ui/loading-spinner";
 import ErrorBoundary from "@/components/ui/error-boundary";
+import HireViewErrorBoundary from "./HireViewErrorBoundary";
+import DatabaseStatus from "@/components/ui/database-status";
 
 interface HireSection {
   id: string;
@@ -273,47 +275,122 @@ export default function DynamicHireView({
   );
 
   const setupRealtimeSubscriptions = useCallback(() => {
+    const sessionId = `hireview_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     const sectionsChannel = supabase
-      .channel("hire_sections_changes")
+      .channel(`${sessionId}_sections`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "hire_sections" },
         (payload) => {
-          console.log("Sections updated:", payload);
-          fetchHireViewData(true);
+          console.log("HireView: Sections updated:", payload);
+          // Immediate optimistic update for better UX
+          if (payload.eventType === "UPDATE" && payload.new) {
+            setSections((prev) =>
+              prev.map((section) =>
+                section.id === payload.new.id ? payload.new : section,
+              ),
+            );
+          } else if (payload.eventType === "INSERT" && payload.new) {
+            setSections((prev) =>
+              [...prev, payload.new].sort(
+                (a, b) => a.order_index - b.order_index,
+              ),
+            );
+          } else if (payload.eventType === "DELETE" && payload.old) {
+            setSections((prev) =>
+              prev.filter((section) => section.id !== payload.old.id),
+            );
+          }
+          // Also refresh data to ensure consistency
+          setTimeout(() => fetchHireViewData(false), 100);
         },
       )
       .subscribe();
 
     const skillsChannel = supabase
-      .channel("hire_skills_changes")
+      .channel(`${sessionId}_skills`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "hire_skills" },
-        () => {
-          fetchHireViewData(true);
+        (payload) => {
+          console.log("HireView: Skills updated:", payload);
+          if (payload.eventType === "UPDATE" && payload.new) {
+            setSkills((prev) =>
+              prev.map((skill) =>
+                skill.id === payload.new.id ? payload.new : skill,
+              ),
+            );
+          } else if (payload.eventType === "INSERT" && payload.new) {
+            setSkills((prev) =>
+              [...prev, payload.new].sort(
+                (a, b) => a.order_index - b.order_index,
+              ),
+            );
+          } else if (payload.eventType === "DELETE" && payload.old) {
+            setSkills((prev) =>
+              prev.filter((skill) => skill.id !== payload.old.id),
+            );
+          }
+          setTimeout(() => fetchHireViewData(false), 100);
         },
       )
       .subscribe();
 
     const experienceChannel = supabase
-      .channel("hire_experience_changes")
+      .channel(`${sessionId}_experience`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "hire_experience" },
-        () => {
-          fetchHireViewData(true);
+        (payload) => {
+          console.log("HireView: Experience updated:", payload);
+          if (payload.eventType === "UPDATE" && payload.new) {
+            setExperiences((prev) =>
+              prev.map((exp) =>
+                exp.id === payload.new.id ? payload.new : exp,
+              ),
+            );
+          } else if (payload.eventType === "INSERT" && payload.new) {
+            setExperiences((prev) =>
+              [...prev, payload.new].sort(
+                (a, b) => a.order_index - b.order_index,
+              ),
+            );
+          } else if (payload.eventType === "DELETE" && payload.old) {
+            setExperiences((prev) =>
+              prev.filter((exp) => exp.id !== payload.old.id),
+            );
+          }
+          setTimeout(() => fetchHireViewData(false), 100);
         },
       )
       .subscribe();
 
     const contactFieldsChannel = supabase
-      .channel("hire_contact_fields_changes")
+      .channel(`${sessionId}_contact_fields`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "hire_contact_fields" },
-        () => {
-          fetchHireViewData(true);
+        (payload) => {
+          console.log("HireView: Contact fields updated:", payload);
+          if (payload.eventType === "UPDATE" && payload.new) {
+            setContactFields((prev) =>
+              prev.map((field) =>
+                field.id === payload.new.id ? payload.new : field,
+              ),
+            );
+          } else if (payload.eventType === "INSERT" && payload.new) {
+            setContactFields((prev) =>
+              [...prev, payload.new].sort(
+                (a, b) => a.order_index - b.order_index,
+              ),
+            );
+          } else if (payload.eventType === "DELETE" && payload.old) {
+            setContactFields((prev) =>
+              prev.filter((field) => field.id !== payload.old.id),
+            );
+          }
+          setTimeout(() => fetchHireViewData(false), 100);
         },
       )
       .subscribe();
@@ -759,129 +836,135 @@ export default function DynamicHireView({
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-sm border-b border-blue-100 sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          {onBackToLanding && (
-            <button
-              onClick={onBackToLanding}
-              className="flex items-center gap-2 text-blue-600 hover:text-blue-700 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span className="font-medium">Back to Landing</span>
-            </button>
-          )}
-          <div className="flex items-center gap-3">
-            <ConnectionStatus />
-            <div className="text-xs text-gray-500 flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              Last updated: {lastUpdated.toLocaleTimeString()}
-            </div>
-            <Button
-              onClick={() => fetchHireViewData(true)}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2"
-              disabled={isLoading}
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.8 }}
-        className="max-w-4xl mx-auto px-6 py-8 space-y-8"
-      >
-        <ErrorBoundary
-          fallback={
-            <Card className="shadow-lg border-red-100">
-              <CardContent className="p-8 text-center">
-                <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Section Failed to Load
-                </h3>
-                <p className="text-gray-600 text-sm mb-4">
-                  This section encountered an error. Please refresh the page.
-                </p>
-                <Button
-                  onClick={() => fetchHireViewData(true)}
-                  variant="outline"
-                  size="sm"
-                >
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Retry
-                </Button>
-              </CardContent>
-            </Card>
-          }
-        >
-          <AnimatePresence mode="wait">
-            {sections.length === 0 ? (
-              <motion.div
-                key="empty-state"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="text-center py-16"
+    <HireViewErrorBoundary
+      onRetry={() => fetchHireViewData()}
+      onBack={onBackToLanding}
+    >
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+        {/* Header */}
+        <header className="bg-white/80 backdrop-blur-sm border-b border-blue-100 sticky top-0 z-50">
+          <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+            {onBackToLanding && (
+              <button
+                onClick={onBackToLanding}
+                className="flex items-center gap-2 text-blue-600 hover:text-blue-700 transition-colors"
               >
-                <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-blue-100 flex items-center justify-center">
-                  <Star className="w-12 h-12 text-blue-500" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                  No Content Available
-                </h3>
-                <p className="text-gray-600 mb-6">
-                  The hire view content is being set up. Please check back soon.
-                </p>
-                <Button
-                  onClick={() => fetchHireViewData(true)}
-                  className="flex items-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Check Again
-                </Button>
-              </motion.div>
-            ) : (
-              sections
-                .sort((a, b) => a.order_index - b.order_index)
-                .map((section, index) => (
-                  <motion.div
-                    key={section.id}
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: index * 0.1 }}
-                  >
-                    {renderSection(section)}
-                  </motion.div>
-                ))
+                <ArrowLeft className="w-5 h-5" />
+                <span className="font-medium">Back to Landing</span>
+              </button>
             )}
-          </AnimatePresence>
-        </ErrorBoundary>
+            <div className="flex items-center gap-3">
+              <ConnectionStatus />
+              <div className="text-xs text-gray-500 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Last updated: {lastUpdated.toLocaleTimeString()}
+              </div>
+              <Button
+                onClick={() => fetchHireViewData(true)}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+                disabled={isLoading}
+              >
+                <RefreshCw
+                  className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`}
+                />
+                Refresh
+              </Button>
+            </div>
+          </div>
+        </header>
 
-        <Separator className="my-8" />
-
-        {/* Footer */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.5 }}
-          className="text-center text-gray-500 text-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.8 }}
+          className="max-w-4xl mx-auto px-6 py-8 space-y-8"
         >
-          <p>© 2024 John Developer. Available for new opportunities.</p>
-          <p className="mt-2">
-            <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-            Currently available for freelance and full-time positions
-          </p>
+          <ErrorBoundary
+            fallback={
+              <Card className="shadow-lg border-red-100">
+                <CardContent className="p-8 text-center">
+                  <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    Section Failed to Load
+                  </h3>
+                  <p className="text-gray-600 text-sm mb-4">
+                    This section encountered an error. Please refresh the page.
+                  </p>
+                  <Button
+                    onClick={() => fetchHireViewData(true)}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Retry
+                  </Button>
+                </CardContent>
+              </Card>
+            }
+          >
+            <AnimatePresence mode="wait">
+              {sections.length === 0 ? (
+                <motion.div
+                  key="empty-state"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="text-center py-16"
+                >
+                  <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-blue-100 flex items-center justify-center">
+                    <Star className="w-12 h-12 text-blue-500" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                    No Content Available
+                  </h3>
+                  <p className="text-gray-600 mb-6">
+                    The hire view content is being set up. Please check back
+                    soon.
+                  </p>
+                  <Button
+                    onClick={() => fetchHireViewData(true)}
+                    className="flex items-center gap-2"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Check Again
+                  </Button>
+                </motion.div>
+              ) : (
+                sections
+                  .sort((a, b) => a.order_index - b.order_index)
+                  .map((section, index) => (
+                    <motion.div
+                      key={section.id}
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: index * 0.1 }}
+                    >
+                      {renderSection(section)}
+                    </motion.div>
+                  ))
+              )}
+            </AnimatePresence>
+          </ErrorBoundary>
+
+          <Separator className="my-8" />
+
+          {/* Footer */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.5 }}
+            className="text-center text-gray-500 text-sm"
+          >
+            <p>© 2024 John Developer. Available for new opportunities.</p>
+            <p className="mt-2">
+              <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+              Currently available for freelance and full-time positions
+            </p>
+          </motion.div>
         </motion.div>
-      </motion.div>
-    </div>
+      </div>
+    </HireViewErrorBoundary>
   );
 }

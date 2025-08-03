@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,9 +44,17 @@ import {
   Zap,
 } from "lucide-react";
 import { supabase } from "../../../supabase/supabase";
+import { debounce } from "lodash";
 import { useToast } from "@/components/ui/use-toast";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import ErrorBoundary from "@/components/ui/error-boundary";
+import DatabaseStatus from "@/components/ui/database-status";
+import {
+  validateSectionData,
+  validateSkillData,
+  validateExperienceData,
+  validateContactFieldData,
+} from "@/lib/hire-view-validation";
 
 interface HireSection {
   id: string;
@@ -177,64 +185,6 @@ export default function HireViewEditor() {
   const channelsRef = useRef<any[]>([]);
   const { toast } = useToast();
 
-  // Setup real-time subscriptions
-  const setupRealtimeSubscriptions = useCallback(() => {
-    // Clean up existing channels
-    channelsRef.current.forEach((channel) => {
-      supabase.removeChannel(channel);
-    });
-    channelsRef.current = [];
-
-    const tables = [
-      "hire_sections",
-      "hire_skills",
-      "hire_experience",
-      "hire_contact_fields",
-    ];
-
-    tables.forEach((table) => {
-      const channel = supabase
-        .channel(`${table}_changes`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table },
-          (payload) => {
-            console.log(`${table} updated:`, payload);
-            fetchHireViewData(true);
-          },
-        )
-        .subscribe((status) => {
-          if (status === "SUBSCRIBED") {
-            setRealtimeActive(true);
-          } else if (status === "CHANNEL_ERROR") {
-            setRealtimeActive(false);
-            toast({
-              title: "Real-time sync error",
-              description: `Failed to subscribe to ${table} changes`,
-              variant: "destructive",
-            });
-          }
-        });
-
-      channelsRef.current.push(channel);
-    });
-
-    return () => {
-      channelsRef.current.forEach((channel) => {
-        supabase.removeChannel(channel);
-      });
-      channelsRef.current = [];
-      setRealtimeActive(false);
-    };
-  }, [fetchHireViewData, toast]);
-
-  useEffect(() => {
-    fetchHireViewData();
-    const cleanup = setupRealtimeSubscriptions();
-
-    return cleanup;
-  }, [fetchHireViewData, setupRealtimeSubscriptions]);
-
   const fetchHireViewData = useCallback(
     async (showToast = false) => {
       try {
@@ -300,6 +250,76 @@ export default function HireViewEditor() {
     [toast],
   );
 
+  // Setup real-time subscriptions with unique channel names and better error handling
+  const setupRealtimeSubscriptions = useCallback(() => {
+    // Clean up existing channels
+    channelsRef.current.forEach((channel) => {
+      supabase.removeChannel(channel);
+    });
+    channelsRef.current = [];
+
+    const tables = [
+      "hire_sections",
+      "hire_skills",
+      "hire_experience",
+      "hire_contact_fields",
+    ];
+
+    let subscribedCount = 0;
+    const sessionId = `admin_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    tables.forEach((table) => {
+      const channel = supabase
+        .channel(`${sessionId}_${table}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table },
+          (payload) => {
+            console.log(`Admin: ${table} updated:`, payload);
+            // Refresh data after external changes (with small delay to avoid conflicts)
+            setTimeout(() => {
+              fetchHireViewData(false);
+            }, 200);
+          },
+        )
+        .subscribe((status) => {
+          console.log(`Admin subscription status for ${table}:`, status);
+          if (status === "SUBSCRIBED") {
+            subscribedCount++;
+            if (subscribedCount === tables.length) {
+              setRealtimeActive(true);
+              console.log("All admin real-time subscriptions active");
+            }
+          } else if (status === "CHANNEL_ERROR") {
+            setRealtimeActive(false);
+            console.error(`Admin real-time subscription error for ${table}`);
+            toast({
+              title: "Real-time sync error",
+              description: `Failed to subscribe to ${table} changes`,
+              variant: "destructive",
+            });
+          }
+        });
+
+      channelsRef.current.push(channel);
+    });
+
+    return () => {
+      channelsRef.current.forEach((channel) => {
+        supabase.removeChannel(channel);
+      });
+      channelsRef.current = [];
+      setRealtimeActive(false);
+    };
+  }, [fetchHireViewData, toast]);
+
+  useEffect(() => {
+    fetchHireViewData();
+    const cleanup = setupRealtimeSubscriptions();
+
+    return cleanup;
+  }, [fetchHireViewData, setupRealtimeSubscriptions]);
+
   // Optimistic update helper
   const withOptimisticUpdate = async <T,>(
     id: string,
@@ -351,39 +371,106 @@ export default function HireViewEditor() {
     updates: Partial<HireSection>,
   ) => {
     const originalSection = sections.find((s) => s.id === sectionId);
-    if (!originalSection) return;
+    if (!originalSection) {
+      console.error(`Section with id ${sectionId} not found`);
+      return;
+    }
 
-    await withOptimisticUpdate(
-      sectionId,
-      async () => {
-        const { error } = await supabase
-          .from("hire_sections")
-          .update({ ...updates, updated_at: new Date().toISOString() })
-          .eq("id", sectionId);
+    try {
+      // Validate updates if they include critical fields
+      if (updates.content || updates.section_type) {
+        const updatedSection = { ...originalSection, ...updates };
+        validateSectionData(updatedSection);
+      }
 
-        if (error) throw error;
-      },
-      () => {
+      // Database update FIRST (no optimistic updates to avoid conflicts)
+      const { data, error } = await supabase
+        .from("hire_sections")
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq("id", sectionId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Database update error:", error);
+        throw error;
+      }
+
+      // Update local state with server data
+      if (data) {
         setSections((prev) =>
-          prev.map((section) =>
-            section.id === sectionId ? { ...section, ...updates } : section,
-          ),
+          prev.map((section) => (section.id === sectionId ? data : section)),
         );
-      },
-      () => {
-        setSections((prev) =>
-          prev.map((section) =>
-            section.id === sectionId ? originalSection : section,
-          ),
-        );
-      },
+
+        toast({
+          title: "Section Updated",
+          description: "Changes saved successfully.",
+        });
+      }
+
+      console.log(`Section ${sectionId} updated successfully:`, data);
+    } catch (validationError: any) {
+      console.error("Section update failed:", validationError);
+      toast({
+        title: "Update Failed",
+        description: validationError.message || "Failed to update section",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Immediate save for real-time editing (removed debouncing to fix race conditions)
+  const handleSectionFieldChange = async (
+    sectionId: string,
+    field: string,
+    value: any,
+  ) => {
+    // Immediate UI update for responsiveness
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === sectionId ? { ...section, [field]: value } : section,
+      ),
     );
+
+    // Immediate database save
+    try {
+      await updateSection(sectionId, { [field]: value });
+    } catch (error) {
+      console.error("Field update failed:", error);
+      // Revert UI change on failure
+      fetchHireViewData();
+    }
+  };
+
+  const handleSectionContentChange = async (
+    sectionId: string,
+    contentField: string,
+    value: any,
+  ) => {
+    const section = sections.find((s) => s.id === sectionId);
+    if (!section) return;
+
+    const updatedContent = { ...section.content, [contentField]: value };
+
+    // Immediate UI update for responsiveness
+    setSections((prev) =>
+      prev.map((s) =>
+        s.id === sectionId ? { ...s, content: updatedContent } : s,
+      ),
+    );
+
+    // Immediate database save
+    try {
+      await updateSection(sectionId, { content: updatedContent });
+    } catch (error) {
+      console.error("Content update failed:", error);
+      // Revert UI change on failure
+      fetchHireViewData();
+    }
   };
 
   const addSkill = async () => {
-    const tempId = `temp-${Date.now()}`;
-    const newSkill = {
-      id: tempId,
+    const newSkillData = {
       name: "New Skill",
       category: "Frontend",
       proficiency: 80,
@@ -392,94 +479,127 @@ export default function HireViewEditor() {
       is_active: true,
     };
 
-    await withOptimisticUpdate(
-      tempId,
-      async () => {
-        const { data, error } = await supabase
-          .from("hire_skills")
-          .insert({
-            name: newSkill.name,
-            category: newSkill.category,
-            proficiency: newSkill.proficiency,
-            color: newSkill.color,
-            order_index: newSkill.order_index,
-            is_active: newSkill.is_active,
-          })
-          .select()
-          .single();
+    try {
+      // Validate skill data before sending to database
+      validateSkillData({ ...newSkillData, id: "temp" });
 
-        if (error) throw error;
+      const { data, error } = await supabase
+        .from("hire_skills")
+        .insert(newSkillData)
+        .select()
+        .single();
 
-        // Replace temp skill with real data
-        setSkills((prev) =>
-          prev.map((skill) => (skill.id === tempId ? data : skill)),
-        );
+      if (error) {
+        console.error("Add skill error:", error);
+        throw error;
+      }
 
-        return data;
-      },
-      () => {
-        setSkills((prev) => [...prev, newSkill as HireSkill]);
-      },
-      () => {
-        setSkills((prev) => prev.filter((skill) => skill.id !== tempId));
-      },
-    );
+      if (data) {
+        setSkills((prev) => [...prev, data]);
+        console.log("Skill added successfully:", data);
+        toast({
+          title: "Skill Added",
+          description: "New skill has been added successfully.",
+        });
+      }
+    } catch (validationError: any) {
+      console.error("Add skill failed:", validationError);
+      toast({
+        title: "Add Skill Failed",
+        description: validationError.message || "Failed to add new skill",
+        variant: "destructive",
+      });
+    }
   };
 
   const updateSkill = async (skillId: string, updates: Partial<HireSkill>) => {
     const originalSkill = skills.find((s) => s.id === skillId);
-    if (!originalSkill) return;
+    if (!originalSkill) {
+      console.error(`Skill with id ${skillId} not found`);
+      return;
+    }
 
-    await withOptimisticUpdate(
-      skillId,
-      async () => {
-        const { error } = await supabase
-          .from("hire_skills")
-          .update(updates)
-          .eq("id", skillId);
+    try {
+      // Validate updates
+      const updatedSkill = { ...originalSkill, ...updates };
+      validateSkillData(updatedSkill);
 
-        if (error) throw error;
-      },
-      () => {
+      // Database update FIRST
+      const { data, error } = await supabase
+        .from("hire_skills")
+        .update(updates)
+        .eq("id", skillId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Skill update error:", error);
+        throw error;
+      }
+
+      // Update local state with server data
+      if (data) {
         setSkills((prev) =>
-          prev.map((skill) =>
-            skill.id === skillId ? { ...skill, ...updates } : skill,
-          ),
+          prev.map((skill) => (skill.id === skillId ? data : skill)),
         );
-      },
-      () => {
-        setSkills((prev) =>
-          prev.map((skill) => (skill.id === skillId ? originalSkill : skill)),
-        );
-      },
-    );
+
+        toast({
+          title: "Skill Updated",
+          description: "Skill changes saved successfully.",
+        });
+      }
+
+      console.log(`Skill ${skillId} updated successfully:`, data);
+    } catch (validationError: any) {
+      console.error("Skill update failed:", validationError);
+      toast({
+        title: "Skill Update Failed",
+        description: validationError.message || "Failed to update skill",
+        variant: "destructive",
+      });
+    }
   };
 
   const deleteSkill = async (skillId: string) => {
     const skillToDelete = skills.find((s) => s.id === skillId);
-    if (!skillToDelete) return;
+    if (!skillToDelete) {
+      console.error(`Skill with id ${skillId} not found`);
+      return;
+    }
 
-    await withOptimisticUpdate(
-      skillId,
-      async () => {
-        const { error } = await supabase
-          .from("hire_skills")
-          .delete()
-          .eq("id", skillId);
+    try {
+      // Immediate optimistic update
+      setSkills((prev) => prev.filter((skill) => skill.id !== skillId));
 
-        if (error) throw error;
-      },
-      () => {
-        setSkills((prev) => prev.filter((skill) => skill.id !== skillId));
-      },
-      () => {
+      const { error } = await supabase
+        .from("hire_skills")
+        .delete()
+        .eq("id", skillId);
+
+      if (error) {
+        console.error("Delete skill error:", error);
+        // Rollback optimistic update
         setSkills((prev) =>
           [...prev, skillToDelete].sort(
             (a, b) => a.order_index - b.order_index,
           ),
         );
-      },
-    );
+        throw error;
+      }
+
+      console.log(`Skill ${skillId} deleted successfully`);
+      toast({
+        title: "Skill Deleted",
+        description: "Skill has been removed successfully.",
+      });
+    } catch (error: any) {
+      console.error("Delete skill failed:", error);
+      toast({
+        title: "Delete Failed",
+        description: error.message || "Failed to delete skill",
+        variant: "destructive",
+      });
+    }
   };
 
   const addExperience = async () => {
@@ -694,6 +814,8 @@ export default function HireViewEditor() {
     <div className="space-y-6">
       <ErrorBoundary>
         <div className="space-y-6">
+          <DatabaseStatus onRetry={() => fetchHireViewData()} />
+
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold text-gray-900">
@@ -853,7 +975,11 @@ export default function HireViewEditor() {
                         <Input
                           value={section.title || ""}
                           onChange={(e) =>
-                            updateSection(section.id, { title: e.target.value })
+                            handleSectionFieldChange(
+                              section.id,
+                              "title",
+                              e.target.value,
+                            )
                           }
                           placeholder="Section title"
                         />
@@ -864,9 +990,11 @@ export default function HireViewEditor() {
                           type="number"
                           value={section.order_index}
                           onChange={(e) =>
-                            updateSection(section.id, {
-                              order_index: parseInt(e.target.value),
-                            })
+                            handleSectionFieldChange(
+                              section.id,
+                              "order_index",
+                              parseInt(e.target.value),
+                            )
                           }
                         />
                       </div>
@@ -880,12 +1008,11 @@ export default function HireViewEditor() {
                             <Input
                               value={section.content?.headline || ""}
                               onChange={(e) =>
-                                updateSection(section.id, {
-                                  content: {
-                                    ...section.content,
-                                    headline: e.target.value,
-                                  },
-                                })
+                                handleSectionContentChange(
+                                  section.id,
+                                  "headline",
+                                  e.target.value,
+                                )
                               }
                               placeholder="Professional headline"
                             />
@@ -895,12 +1022,11 @@ export default function HireViewEditor() {
                             <Input
                               value={section.content?.tagline || ""}
                               onChange={(e) =>
-                                updateSection(section.id, {
-                                  content: {
-                                    ...section.content,
-                                    tagline: e.target.value,
-                                  },
-                                })
+                                handleSectionContentChange(
+                                  section.id,
+                                  "tagline",
+                                  e.target.value,
+                                )
                               }
                               placeholder="Professional tagline"
                             />
@@ -911,12 +1037,11 @@ export default function HireViewEditor() {
                           <Input
                             value={section.content?.cta_text || ""}
                             onChange={(e) =>
-                              updateSection(section.id, {
-                                content: {
-                                  ...section.content,
-                                  cta_text: e.target.value,
-                                },
-                              })
+                              handleSectionContentChange(
+                                section.id,
+                                "cta_text",
+                                e.target.value,
+                              )
                             }
                             placeholder="Call to action text"
                           />
@@ -932,12 +1057,11 @@ export default function HireViewEditor() {
                         <Textarea
                           value={section.content?.description || ""}
                           onChange={(e) =>
-                            updateSection(section.id, {
-                              content: {
-                                ...section.content,
-                                description: e.target.value,
-                              },
-                            })
+                            handleSectionContentChange(
+                              section.id,
+                              "description",
+                              e.target.value,
+                            )
                           }
                           placeholder="Section description"
                           rows={3}
@@ -952,12 +1076,11 @@ export default function HireViewEditor() {
                           <Input
                             value={section.content?.submit_text || ""}
                             onChange={(e) =>
-                              updateSection(section.id, {
-                                content: {
-                                  ...section.content,
-                                  submit_text: e.target.value,
-                                },
-                              })
+                              handleSectionContentChange(
+                                section.id,
+                                "submit_text",
+                                e.target.value,
+                              )
                             }
                             placeholder="Send Message"
                           />
@@ -967,12 +1090,11 @@ export default function HireViewEditor() {
                           <Input
                             value={section.content?.success_message || ""}
                             onChange={(e) =>
-                              updateSection(section.id, {
-                                content: {
-                                  ...section.content,
-                                  success_message: e.target.value,
-                                },
-                              })
+                              handleSectionContentChange(
+                                section.id,
+                                "success_message",
+                                e.target.value,
+                              )
                             }
                             placeholder="Thank you message"
                           />
@@ -987,12 +1109,11 @@ export default function HireViewEditor() {
                           <Input
                             value={section.content?.button_text || ""}
                             onChange={(e) =>
-                              updateSection(section.id, {
-                                content: {
-                                  ...section.content,
-                                  button_text: e.target.value,
-                                },
-                              })
+                              handleSectionContentChange(
+                                section.id,
+                                "button_text",
+                                e.target.value,
+                              )
                             }
                             placeholder="Download PDF Resume"
                           />
@@ -1002,12 +1123,11 @@ export default function HireViewEditor() {
                           <Input
                             value={section.content?.version || ""}
                             onChange={(e) =>
-                              updateSection(section.id, {
-                                content: {
-                                  ...section.content,
-                                  version: e.target.value,
-                                },
-                              })
+                              handleSectionContentChange(
+                                section.id,
+                                "version",
+                                e.target.value,
+                              )
                             }
                             placeholder="1.0"
                           />
@@ -1017,12 +1137,11 @@ export default function HireViewEditor() {
                           <Input
                             value={section.content?.file_url || ""}
                             onChange={(e) =>
-                              updateSection(section.id, {
-                                content: {
-                                  ...section.content,
-                                  file_url: e.target.value,
-                                },
-                              })
+                              handleSectionContentChange(
+                                section.id,
+                                "file_url",
+                                e.target.value,
+                              )
                             }
                             placeholder="https://..."
                           />
