@@ -203,6 +203,7 @@ export default function LandingPage() {
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
+        .eq("id", "main")
         .single();
 
       if (data && !error) {
@@ -394,17 +395,24 @@ export default function LandingPage() {
                 >
                   <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-900 to-purple-900 flex items-center justify-center text-white text-4xl lg:text-5xl font-bold overflow-hidden">
                     <img
-                      src={
-                        profile?.avatar_url ||
-                        localStorage.getItem("profileImage") ||
-                        "https://api.dicebear.com/7.x/avataaars/svg?seed=boydev&accessories=prescription02&accessoriesChance=100&clothingGraphic=code&top=shortHair&topChance=100&facialHair=light&facialHairChance=100&skinColor=light"
-                      }
-                      alt={profile?.full_name || "Boy Developer Avatar"}
+                      src={(() => {
+                        if (profile?.avatar_url) {
+                          // Check if it's a storage path or full URL
+                          if (profile.avatar_url.startsWith("http")) {
+                            return `${profile.avatar_url}?v=${Date.now()}`;
+                          } else {
+                            // Generate public URL from storage path
+                            const { data } = supabase.storage
+                              .from("public-profile-images")
+                              .getPublicUrl(profile.avatar_url);
+                            return `${data.publicUrl}?v=${Date.now()}`;
+                          }
+                        }
+                        return "https://api.dicebear.com/7.x/avataaars/svg?seed=boydev&accessories=prescription02&accessoriesChance=100&clothingGraphic=code&top=shortHair&topChance=100&facialHair=light&facialHairChance=100&skinColor=light";
+                      })()}
+                      alt={profile?.full_name || "Profile Avatar"}
                       className="w-full h-full object-cover rounded-full"
-                      key={
-                        profile?.avatar_url ||
-                        localStorage.getItem("profileImage")
-                      }
+                      key={`${profile?.avatar_url || "default"}-${Date.now()}`}
                       onError={(e) => {
                         const target = e.target as HTMLImageElement;
                         target.src =

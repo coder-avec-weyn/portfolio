@@ -540,9 +540,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
   const fetchProfileImage = async () => {
     try {
-      logOperation("Fetching profile image from server");
+      logOperation("Fetching profile image from unified storage system");
 
-      // Always fetch from database first to get the latest server-side image
+      // Always fetch from database first to get the latest server-side image path
       const { data, error } = await supabase
         .from("profiles")
         .select("avatar_url")
@@ -550,47 +550,38 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         .single();
 
       if (data && !error && data.avatar_url) {
-        // Use server image as the source of truth
-        setProfileImage(data.avatar_url);
-        // Update localStorage to match server
-        localStorage.setItem("profileImage", data.avatar_url);
-        logOperation(
-          "Profile image fetched from server and synced to localStorage",
-        );
-      } else {
-        // Check localStorage as fallback
-        const localImage = localStorage.getItem("profileImage");
-        if (localImage) {
-          setProfileImage(localImage);
-          logOperation("Using cached profile image from localStorage");
+        // Check if it's a storage path or full URL
+        let imageUrl;
+        if (data.avatar_url.startsWith("http")) {
+          // It's already a full URL (legacy)
+          imageUrl = data.avatar_url;
         } else {
-          // Set default image if no image found anywhere
-          const defaultImage =
-            "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
-          setProfileImage(defaultImage);
-          localStorage.setItem("profileImage", defaultImage);
-          logOperation("Using default profile image");
+          // It's a storage path, generate public URL with cache busting
+          const { data: urlData } = supabase.storage
+            .from("public-profile-images")
+            .getPublicUrl(data.avatar_url);
+
+          imageUrl = `${urlData.publicUrl}?v=${Date.now()}`;
         }
+
+        setProfileImage(imageUrl);
+        logOperation("Profile image fetched from unified storage system");
+      } else {
+        // Use default image if no image found
+        const defaultImage =
+          "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+        setProfileImage(defaultImage);
+        logOperation("Using default profile image");
       }
     } catch (error: any) {
       console.error("Error fetching profile image:", error);
       logOperation(`Profile image fetch failed: ${error.message}`, false);
 
-      // Check localStorage as fallback
-      const localImage = localStorage.getItem("profileImage");
-      if (localImage) {
-        setProfileImage(localImage);
-        logOperation(
-          "Using cached profile image from localStorage as fallback",
-        );
-      } else {
-        // Use default image on error
-        const defaultImage =
-          "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
-        setProfileImage(defaultImage);
-        localStorage.setItem("profileImage", defaultImage);
-        logOperation("Using default profile image as fallback");
-      }
+      // Use default image on error
+      const defaultImage =
+        "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+      setProfileImage(defaultImage);
+      logOperation("Using default profile image as fallback");
     }
   };
 
@@ -764,33 +755,87 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       return;
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
+    // Validate file size (max 2MB for better performance)
+    if (file.size > 2 * 1024 * 1024) {
       toast({
         title: "File Too Large",
-        description: "Please upload an image smaller than 5MB.",
+        description: "Please upload an image smaller than 2MB.",
         variant: "destructive",
       });
       return;
     }
 
     setIsUploadingImage(true);
-    logOperation("Starting server-side image upload process");
+    logOperation("Starting unified profile image upload to public bucket");
 
     try {
-      // Generate unique filename with timestamp
+      // Get current user for unique path
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error("Authentication required for image upload");
+      }
+
+      // Compress image to WebP format for better performance
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      const img = new Image();
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+      });
+
+      // Set canvas dimensions (max 400x400 for profile images)
+      const maxSize = 400;
+      const ratio = Math.min(maxSize / img.width, maxSize / img.height);
+      canvas.width = img.width * ratio;
+      canvas.height = img.height * ratio;
+
+      // Draw and compress image
+      ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      // Convert to WebP blob
+      const webpBlob = await new Promise<Blob>((resolve) => {
+        canvas.toBlob(
+          (blob) => {
+            resolve(blob!);
+          },
+          "image/webp",
+          0.8,
+        ); // 80% quality
+      });
+
+      // Generate unique filename with timestamp for cache busting
       const timestamp = Date.now();
-      const fileExtension = file.name.split(".").pop() || "jpg";
-      const fileName = `profile-${timestamp}.${fileExtension}`;
+      const fileName = `${user.id}/avatar.webp`;
 
-      logOperation(`Uploading file: ${fileName}`);
+      logOperation(`Uploading compressed WebP image: ${fileName}`);
 
-      // Upload to Supabase Storage
+      // Remove old image from storage if it exists
+      try {
+        const { error: deleteError } = await supabase.storage
+          .from("public-profile-images")
+          .remove([fileName]);
+
+        if (!deleteError) {
+          logOperation(`Removed old image: ${fileName}`);
+        }
+      } catch (cleanupError) {
+        logOperation(`Old image cleanup skipped: ${cleanupError}`, false);
+        // Don't fail the upload if cleanup fails
+      }
+
+      // Upload to public Supabase Storage bucket
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("profile-images")
-        .upload(fileName, file, {
+        .from("public-profile-images")
+        .upload(fileName, webpBlob, {
           cacheControl: "3600",
           upsert: true,
+          contentType: "image/webp",
         });
 
       if (uploadError) {
@@ -798,42 +843,22 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         throw uploadError;
       }
 
-      logOperation("File uploaded to storage successfully");
+      logOperation("File uploaded to public storage successfully");
 
-      // Get public URL for the uploaded image
+      // Get public URL with cache busting
       const { data: urlData } = supabase.storage
-        .from("profile-images")
+        .from("public-profile-images")
         .getPublicUrl(fileName);
 
-      const publicUrl = urlData.publicUrl;
-      logOperation(`Generated public URL: ${publicUrl}`);
+      const publicUrlWithCacheBust = `${urlData.publicUrl}?v=${timestamp}`;
+      logOperation(
+        `Generated public URL with cache busting: ${publicUrlWithCacheBust}`,
+      );
 
-      // Remove old image from storage if it exists
-      try {
-        const oldImageUrl =
-          localStorage.getItem("profileImage") || profile?.avatar_url;
-        if (oldImageUrl && oldImageUrl.includes("profile-images")) {
-          // Extract filename from old URL
-          const oldFileName = oldImageUrl.split("/").pop();
-          if (oldFileName && oldFileName !== fileName) {
-            const { error: deleteError } = await supabase.storage
-              .from("profile-images")
-              .remove([oldFileName]);
-
-            if (!deleteError) {
-              logOperation(`Removed old image: ${oldFileName}`);
-            }
-          }
-        }
-      } catch (cleanupError) {
-        logOperation(`Old image cleanup failed: ${cleanupError}`, false);
-        // Don't fail the upload if cleanup fails
-      }
-
-      // Update profile in database with new image URL
+      // Update profile in database with the storage path (not full URL)
       const { error: updateError } = await supabase.from("profiles").upsert({
         id: "main",
-        avatar_url: publicUrl,
+        avatar_url: fileName, // Store path, not full URL
         updated_at: new Date().toISOString(),
       });
 
@@ -845,17 +870,18 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         throw updateError;
       }
 
-      logOperation("Profile updated in database with new image URL");
+      logOperation("Profile updated in database with new image path");
 
-      // Update local state and localStorage for immediate UI update
-      setProfileImage(publicUrl);
-      localStorage.setItem("profileImage", publicUrl);
-      logOperation("Local state and localStorage updated");
+      // Update local state with the full URL for immediate UI update
+      setProfileImage(publicUrlWithCacheBust);
+      // Clear localStorage to force using server data
+      localStorage.removeItem("profileImage");
+      logOperation("Local state updated and localStorage cleared");
 
       toast({
         title: "Profile Image Updated",
         description:
-          "Your profile image has been uploaded to the server and will be accessible across the entire website.",
+          "Your profile image has been uploaded and will appear across all sections of your portfolio instantly.",
       });
     } catch (error: any) {
       console.error("Error uploading image:", error);
@@ -2597,7 +2623,8 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         {isUploadingImage ? "Uploading..." : "Upload New Image"}
                       </label>
                       <p className="text-sm text-gray-500 mt-2">
-                        Supported formats: JPG, PNG, GIF (Max 5MB)
+                        Supported formats: JPG, PNG, GIF (Max 2MB) •
+                        Auto-compressed to WebP
                       </p>
                     </div>
 
@@ -2613,14 +2640,16 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         <li>• Chat widget avatar</li>
                         <li>• Generated PDF resume</li>
                         <li>
-                          • Stored in: Supabase Storage (profile-images bucket)
+                          • Stored in: Supabase Storage (public-profile-images
+                          bucket)
                         </li>
                       </ul>
                       <div className="mt-3 p-2 bg-green-50 rounded border border-green-200">
                         <p className="text-xs text-green-700">
-                          ✅ Server-side storage: Images are uploaded to
-                          Supabase Storage and accessible across all devices and
-                          sessions.
+                          ✅ Unified storage: Images are compressed to WebP,
+                          stored in public Supabase Storage, and instantly
+                          accessible across all portfolio sections with cache
+                          busting.
                         </p>
                       </div>
                     </div>

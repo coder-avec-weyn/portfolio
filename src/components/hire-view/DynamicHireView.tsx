@@ -217,6 +217,7 @@ export default function DynamicHireView({
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
+        .eq("id", "main")
         .single();
 
       if (data && !error) {
@@ -678,25 +679,35 @@ export default function DynamicHireView({
         }}
       >
         {(() => {
-          const profileImage = profile?.avatar_url;
-          const adminImage = localStorage.getItem("profileImage");
-          const imageUrl = profileImage || adminImage;
+          if (profile?.avatar_url) {
+            // Check if it's a storage path or full URL
+            let imageUrl;
+            if (profile.avatar_url.startsWith("http")) {
+              imageUrl = `${profile.avatar_url}?v=${Date.now()}`;
+            } else {
+              // Generate public URL from storage path
+              const { data } = supabase.storage
+                .from("public-profile-images")
+                .getPublicUrl(profile.avatar_url);
+              imageUrl = `${data.publicUrl}?v=${Date.now()}`;
+            }
 
-          return imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={profile?.full_name || "Profile"}
-              className="w-full h-full object-cover"
-              key={imageUrl}
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.src =
-                  "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
-              }}
-            />
-          ) : (
-            section.content?.avatar_text || "RL"
-          );
+            return (
+              <img
+                src={imageUrl}
+                alt={profile?.full_name || "Profile"}
+                className="w-full h-full object-cover"
+                key={`${profile.avatar_url}-${Date.now()}`}
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src =
+                    "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+                }}
+              />
+            );
+          } else {
+            return section.content?.avatar_text || "RL";
+          }
         })()}
       </div>
       <h1

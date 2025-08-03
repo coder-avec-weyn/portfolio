@@ -389,11 +389,20 @@ export default function PortfolioExperience({
                   : "from-purple-600 to-blue-600"
               } flex items-center justify-center text-white text-6xl font-bold`}
             >
-              {profile?.avatar_url || localStorage.getItem("profileImage") ? (
+              {profile?.avatar_url ? (
                 <img
-                  src={
-                    profile?.avatar_url || localStorage.getItem("profileImage")
-                  }
+                  src={(() => {
+                    // Check if it's a storage path or full URL
+                    if (profile.avatar_url.startsWith("http")) {
+                      return profile.avatar_url;
+                    } else {
+                      // Generate public URL from storage path
+                      const { data } = supabase.storage
+                        .from("public-profile-images")
+                        .getPublicUrl(profile.avatar_url);
+                      return `${data.publicUrl}?v=${Date.now()}`;
+                    }
+                  })()}
                   alt={profile?.full_name || "Profile"}
                   className="w-full h-full object-cover"
                   onError={(e) => {

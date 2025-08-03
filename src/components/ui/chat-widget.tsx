@@ -22,6 +22,7 @@ import { Input } from "./input";
 import { cn } from "@/lib/utils";
 import { queryGemini, validatePortfolioQuery } from "@/lib/gemini";
 import { useToast } from "./use-toast";
+import { supabase } from "../../../supabase/supabase";
 
 interface ChatMessage {
   id: string;
@@ -118,24 +119,35 @@ const MessageBubble = ({
       {!message.isUser && (
         <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center mr-3 mt-1 flex-shrink-0 overflow-hidden">
           {(() => {
-            const profileImage = profile?.avatar_url;
-            const adminImage = localStorage.getItem("profileImage");
-            const imageUrl = profileImage || adminImage;
+            if (profile?.avatar_url) {
+              // Check if it's a storage path or full URL
+              let imageUrl;
+              if (profile.avatar_url.startsWith("http")) {
+                imageUrl = `${profile.avatar_url}?v=${Date.now()}`;
+              } else {
+                // Generate public URL from storage path
+                const { data } = supabase.storage
+                  .from("public-profile-images")
+                  .getPublicUrl(profile.avatar_url);
+                imageUrl = `${data.publicUrl}?v=${Date.now()}`;
+              }
 
-            return imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={profile?.full_name || "AI Assistant"}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src =
-                    "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
-                }}
-              />
-            ) : (
-              <Bot className="w-4 h-4 text-white" />
-            );
+              return (
+                <img
+                  src={imageUrl}
+                  alt={profile?.full_name || "AI Assistant"}
+                  className="w-full h-full object-cover"
+                  key={`${profile.avatar_url}-${Date.now()}`}
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.src =
+                      "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+                  }}
+                />
+              );
+            } else {
+              return <Bot className="w-4 h-4 text-white" />;
+            }
           })()}
         </div>
       )}
@@ -472,24 +484,35 @@ export default function ChatWidget({ profile, className }: ChatWidgetProps) {
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 flex items-center justify-center relative overflow-hidden">
                     {(() => {
-                      const profileImage = profile?.avatar_url;
-                      const adminImage = localStorage.getItem("profileImage");
-                      const imageUrl = profileImage || adminImage;
+                      if (profile?.avatar_url) {
+                        // Check if it's a storage path or full URL
+                        let imageUrl;
+                        if (profile.avatar_url.startsWith("http")) {
+                          imageUrl = `${profile.avatar_url}?v=${Date.now()}`;
+                        } else {
+                          // Generate public URL from storage path
+                          const { data } = supabase.storage
+                            .from("public-profile-images")
+                            .getPublicUrl(profile.avatar_url);
+                          imageUrl = `${data.publicUrl}?v=${Date.now()}`;
+                        }
 
-                      return imageUrl ? (
-                        <img
-                          src={imageUrl}
-                          alt={profile?.full_name || "AI Assistant"}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.src =
-                              "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
-                          }}
-                        />
-                      ) : (
-                        <Sparkles className="w-4 h-4 text-white" />
-                      );
+                        return (
+                          <img
+                            src={imageUrl}
+                            alt={profile?.full_name || "AI Assistant"}
+                            className="w-full h-full object-cover"
+                            key={`${profile.avatar_url}-${Date.now()}`}
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.src =
+                                "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
+                            }}
+                          />
+                        );
+                      } else {
+                        return <Sparkles className="w-4 h-4 text-white" />;
+                      }
                     })()}
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-900 animate-pulse"></div>
                   </div>
