@@ -3,11 +3,8 @@ import { supabase } from "../../supabase/supabase";
 export async function testSupabaseConnection() {
   try {
     console.log("Testing Supabase connection...");
-    console.log("Supabase URL:", import.meta.env.VITE_SUPABASE_URL);
-    console.log(
-      "Supabase Key exists:",
-      !!import.meta.env.VITE_SUPABASE_ANON_KEY,
-    );
+    // Since we're using hardcoded values, we can't check env vars
+    console.log("Using hardcoded Supabase credentials");
 
     // Test basic connection
     const { data, error } = await supabase

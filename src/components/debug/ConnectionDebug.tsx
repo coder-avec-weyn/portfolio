@@ -57,25 +57,36 @@ export default function ConnectionDebug() {
             <div className="space-y-1 text-sm">
               <div className="flex items-center gap-2">
                 <span>Supabase URL:</span>
-                <Badge variant="default">Hardcoded</Badge>
-                <span className="text-xs text-gray-500">
-                  https://ixqjqjqjqjqjqjqjqjqj.supabase.co
+                <Badge variant="destructive">PLACEHOLDER</Badge>
+                <span className="text-xs text-red-500">
+                  You need to replace with actual URL
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span>Supabase Anon Key:</span>
-                <Badge variant="default">Hardcoded</Badge>
-                <span className="text-xs text-gray-500">
-                  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                <Badge variant="destructive">PLACEHOLDER</Badge>
+                <span className="text-xs text-red-500">
+                  You need to replace with actual key
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span>Gemini API Key:</span>
-                <Badge variant="default">Hardcoded</Badge>
-                <span className="text-xs text-gray-500">
-                  AIzaSyHardcodedGeminiAPIKeyHere...
+                <Badge variant="destructive">PLACEHOLDER</Badge>
+                <span className="text-xs text-red-500">
+                  You need to replace with actual key
                 </span>
               </div>
+            </div>
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p className="text-sm text-yellow-800">
+                <strong>Action Required:</strong> The hardcoded values are
+                placeholders. You need to replace them with your actual Supabase
+                and Gemini credentials in:
+              </p>
+              <ul className="text-xs text-yellow-700 mt-2 ml-4 list-disc">
+                <li>supabase/supabase.ts</li>
+                <li>src/lib/gemini.ts</li>
+              </ul>
             </div>
           </div>
 
