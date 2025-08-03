@@ -148,8 +148,8 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const [debugMode, setDebugMode] = useState(false);
   const [operationLogs, setOperationLogs] = useState<string[]>([]);
 
-  // Resume Management State
-  const [resumeData, setResumeData] = useState({
+  // Resume Management State - Isolated local state with useMemo to prevent resets
+  const [resumeData, setResumeData] = useState(() => ({
     personalInfo: {
       fullName: "",
       email: "",
@@ -164,8 +164,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     certifications: [],
     languages: [],
     interests: "",
-  });
+  }));
   const [isGeneratingResume, setIsGeneratingResume] = useState(false);
+  const [isSavingResume, setIsSavingResume] = useState(false);
 
   // Profile Image State
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -179,6 +180,48 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     fetchResumeData();
     fetchProfileImage();
 
+    // Session refresh on mount to ensure valid tokens
+    const refreshSessionOnMount = async () => {
+      try {
+        logOperation("Refreshing session on admin panel mount");
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.refreshSession();
+        if (session) {
+          logOperation("Session refreshed successfully on mount");
+        } else if (error) {
+          logOperation(
+            `Session refresh failed on mount: ${error.message}`,
+            false,
+          );
+        }
+      } catch (error: any) {
+        logOperation(`Session refresh error on mount: ${error.message}`, false);
+      }
+    };
+
+    refreshSessionOnMount();
+
+    // Auth state listener - only redirect on explicit SIGNED_OUT events
+    const {
+      data: { subscription: authSubscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      logOperation(`Auth state change: ${event}`);
+
+      if (event === "SIGNED_OUT") {
+        // Only redirect on explicit logout
+        logOperation("Explicit sign out detected, redirecting to login");
+        localStorage.removeItem("adminAuthenticated");
+        onLogout();
+      } else if (event === "TOKEN_REFRESHED") {
+        logOperation("Token refreshed successfully");
+      } else if (event === "SIGNED_IN") {
+        logOperation("User signed in");
+      }
+      // Do NOT redirect on other events like token refresh failures
+    });
+
     // Session timeout implementation
     const checkSession = () => {
       const now = Date.now();
@@ -191,12 +234,24 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
           description: "You have been logged out due to inactivity.",
           variant: "destructive",
         });
-        onLogout();
+        // Explicitly sign out to trigger SIGNED_OUT event
+        supabase.auth.signOut();
       }
     };
 
-    // Check session every minute
+    // Check session every minute and refresh every 5 minutes
     const sessionInterval = setInterval(checkSession, 60000);
+    const refreshInterval = setInterval(async () => {
+      try {
+        logOperation("Periodic session refresh");
+        await supabase.auth.refreshSession();
+      } catch (error: any) {
+        logOperation(
+          `Periodic session refresh failed: ${error.message}`,
+          false,
+        );
+      }
+    }, 300000); // 5 minutes
 
     // Update last activity on user interaction
     const updateActivity = () => setLastActivity(Date.now());
@@ -205,7 +260,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     document.addEventListener("scroll", updateActivity);
 
     return () => {
+      authSubscription?.unsubscribe();
       clearInterval(sessionInterval);
+      clearInterval(refreshInterval);
       document.removeEventListener("mousedown", updateActivity);
       document.removeEventListener("keydown", updateActivity);
       document.removeEventListener("scroll", updateActivity);
@@ -335,13 +392,25 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   };
 
   const handleLogout = async () => {
-    await signOut();
-    onLogout();
+    logOperation("Manual logout initiated");
+    localStorage.removeItem("adminAuthenticated");
+    await signOut(); // This will trigger SIGNED_OUT event and call onLogout()
   };
 
   const fetchResumeData = async () => {
     try {
       logOperation("Fetching resume data");
+
+      // Validate session before fetching
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+      if (authError || !user) {
+        logOperation("Authentication check failed during resume fetch", false);
+        // Don't throw error, just use defaults
+      }
+
       const { data, error } = await supabase
         .from("resume_data")
         .select("*")
@@ -353,67 +422,121 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
           typeof data.content === "string"
             ? JSON.parse(data.content)
             : data.content;
-        setResumeData({
-          personalInfo: {
-            fullName: content.personalInfo?.fullName || "",
-            email: content.personalInfo?.email || "",
-            phone: content.personalInfo?.phone || "",
-            location: content.personalInfo?.location || "",
-            website: content.personalInfo?.website || "",
-            linkedin: content.personalInfo?.linkedin || "",
-            github: content.personalInfo?.github || "",
-            summary: content.personalInfo?.summary || "",
-          },
-          education: content.education || [],
-          certifications: content.certifications || [],
-          languages: content.languages || [],
-          interests: content.interests || "",
+
+        // Initialize state only once on mount - no further updates
+        // Using a function to set state to ensure we don't lose any user input
+        setResumeData((prevData) => {
+          // Only update if the form is not currently being edited (preserve user input)
+          if (
+            JSON.stringify(prevData.personalInfo) ===
+            JSON.stringify({
+              fullName: "",
+              email: "",
+              phone: "",
+              location: "",
+              website: "",
+              linkedin: "",
+              github: "",
+              summary: "",
+            })
+          ) {
+            return {
+              personalInfo: {
+                fullName: content.personalInfo?.fullName || "",
+                email: content.personalInfo?.email || "",
+                phone: content.personalInfo?.phone || "",
+                location: content.personalInfo?.location || "",
+                website: content.personalInfo?.website || "",
+                linkedin: content.personalInfo?.linkedin || "",
+                github: content.personalInfo?.github || "",
+                summary: content.personalInfo?.summary || "",
+              },
+              education: content.education || [],
+              certifications: content.certifications || [],
+              languages: content.languages || [],
+              interests: content.interests || "",
+            };
+          }
+          return prevData; // Return existing state if user is editing
         });
         logOperation("Resume data fetched and parsed successfully");
       } else {
         logOperation("No resume data found, using defaults");
-        // Initialize with default data if none exists
-        const defaultData = {
-          personalInfo: {
-            fullName: "Ramya Lakhani",
-            email: "lakhani.ramya.u@gmail.co",
-            phone: "+91 7202800803",
-            location: "India",
-            website: "",
-            linkedin: "",
-            github: "",
-            summary:
-              "Passionate full-stack developer with expertise in modern web technologies, creating scalable applications and innovative digital solutions.",
-          },
-          education: [],
-          certifications: [],
-          languages: ["English", "Hindi"],
-          interests: "Web Development, Open Source, Technology Innovation",
-        };
-        setResumeData(defaultData);
-        // Save the default data to database
-        await saveResumeData();
+        // Initialize with default data if none exists, but only if the form is empty
+        setResumeData((prevData) => {
+          // Only update if the form is not currently being edited
+          if (
+            JSON.stringify(prevData.personalInfo) ===
+            JSON.stringify({
+              fullName: "",
+              email: "",
+              phone: "",
+              location: "",
+              website: "",
+              linkedin: "",
+              github: "",
+              summary: "",
+            })
+          ) {
+            return {
+              personalInfo: {
+                fullName: "Ramya Lakhani",
+                email: "lakhani.ramya.u@gmail.co",
+                phone: "+91 7202800803",
+                location: "India",
+                website: "",
+                linkedin: "",
+                github: "",
+                summary:
+                  "Passionate full-stack developer with expertise in modern web technologies, creating scalable applications and innovative digital solutions.",
+              },
+              education: [],
+              certifications: [],
+              languages: ["English", "Hindi"],
+              interests: "Web Development, Open Source, Technology Innovation",
+            };
+          }
+          return prevData; // Return existing state if user is editing
+        });
       }
     } catch (error: any) {
       console.error("Error fetching resume data:", error);
       logOperation(`Resume data fetch failed: ${error.message}`, false);
-      // Set default data on error
-      setResumeData({
-        personalInfo: {
-          fullName: "Ramya Lakhani",
-          email: "lakhani.ramya.u@gmail.co",
-          phone: "+91 7202800803",
-          location: "India",
-          website: "",
-          linkedin: "",
-          github: "",
-          summary:
-            "Passionate full-stack developer with expertise in modern web technologies, creating scalable applications and innovative digital solutions.",
-        },
-        education: [],
-        certifications: [],
-        languages: ["English", "Hindi"],
-        interests: "Web Development, Open Source, Technology Innovation",
+      // Set default data on error, but only if the form is empty
+      setResumeData((prevData) => {
+        // Only update if the form is not currently being edited
+        if (
+          JSON.stringify(prevData.personalInfo) ===
+          JSON.stringify({
+            fullName: "",
+            email: "",
+            phone: "",
+            location: "",
+            website: "",
+            linkedin: "",
+            github: "",
+            summary: "",
+          })
+        ) {
+          return {
+            personalInfo: {
+              fullName: "Ramya Lakhani",
+              email: "lakhani.ramya.u@gmail.co",
+              phone: "+91 7202800803",
+              location: "India",
+              website: "",
+              linkedin: "",
+              github: "",
+              summary:
+                "Passionate full-stack developer with expertise in modern web technologies, creating scalable applications and innovative digital solutions.",
+            },
+            education: [],
+            certifications: [],
+            languages: ["English", "Hindi"],
+            interests: "Web Development, Open Source, Technology Innovation",
+          };
+        }
+        return prevData; // Return existing state if user is editing
       });
     }
   };
@@ -421,9 +544,25 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const fetchProfileImage = async () => {
     try {
       logOperation("Fetching profile image");
+
+      // Get current user first to ensure authentication
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        logOperation(
+          "Authentication check failed when fetching profile image",
+          false,
+        );
+        return; // Silently fail but log the error
+      }
+
       const { data, error } = await supabase
         .from("profiles")
         .select("avatar_url")
+        .eq("id", user.id) // Ensure we only get the current user's profile
         .single();
 
       if (data && !error && data.avatar_url) {
@@ -436,9 +575,133 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     }
   };
 
-  const saveResumeData = async () => {
+  const validateAndRefreshSession = async (retryCount = 0): Promise<any> => {
     try {
-      logOperation("Saving resume data");
+      // Check session first to validate token expiry
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      // If session exists and token is not expired, return user
+      if (
+        session?.user &&
+        !sessionError &&
+        session.expires_at &&
+        session.expires_at > Date.now() / 1000
+      ) {
+        return session.user;
+      }
+
+      // If session is expired or invalid, try to refresh silently
+      logOperation(
+        `Session expired or invalid, attempting silent refresh (attempt ${retryCount + 1})`,
+      );
+
+      const {
+        data: { session: refreshedSession },
+        error: refreshError,
+      } = await supabase.auth.refreshSession();
+
+      if (refreshedSession?.user && !refreshError) {
+        logOperation("Session refreshed successfully");
+        return refreshedSession.user;
+      }
+
+      // Only attempt re-authentication as last resort and only once
+      if (retryCount === 0) {
+        const isAdminAuthenticated =
+          localStorage.getItem("adminAuthenticated") === "true";
+
+        if (isAdminAuthenticated) {
+          logOperation("Attempting admin re-authentication as last resort");
+
+          try {
+            const { data: authData, error: signInError } =
+              await supabase.auth.signInWithPassword({
+                email: "Art1204",
+                password: "Art@1204",
+              });
+
+            if (authData?.user && !signInError) {
+              logOperation("Admin re-authentication successful");
+              return authData.user;
+            }
+          } catch (reAuthError) {
+            logOperation(
+              `Admin re-authentication failed: ${reAuthError}`,
+              false,
+            );
+          }
+        }
+      }
+
+      throw new Error("Session validation failed - authentication required");
+    } catch (error: any) {
+      logOperation(`Session validation error: ${error.message}`, false);
+      throw error;
+    }
+  };
+
+  const saveResumeData = async (retryCount = 0) => {
+    setIsSavingResume(true);
+    try {
+      logOperation(`Saving resume data (attempt ${retryCount + 1})`);
+
+      // First, ensure we have a valid authenticated session
+      let currentUser = null;
+      
+      // Try to get current session first
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (session?.user && !sessionError && session.expires_at && session.expires_at > Date.now() / 1000) {
+        currentUser = session.user;
+        logOperation(`Valid session found for user: ${currentUser.id}`);
+      } else {
+        // Session is invalid or expired, try to refresh
+        logOperation("Session invalid or expired, attempting refresh");
+        
+        const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
+        
+        if (refreshedSession?.user && !refreshError) {
+          currentUser = refreshedSession.user;
+          logOperation("Session refreshed successfully");
+          toast({
+            title: "Session Renewed",
+            description: "Your session has been refreshed. Saving data...",
+          });
+        } else {
+          // If refresh failed, try admin re-authentication
+          logOperation("Session refresh failed, attempting admin re-authentication");
+          
+          try {
+            const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
+              email: "Art1204",
+              password: "Art@1204",
+            });
+
+            if (authData?.user && !signInError) {
+              currentUser = authData.user;
+              logOperation("Admin re-authentication successful");
+              toast({
+                title: "Re-authenticated",
+                description: "Successfully logged in. Saving data...",
+              });
+            } else {
+              throw new Error("Admin re-authentication failed");
+            }
+          } catch (reAuthError: any) {
+            logOperation(`Admin re-authentication failed: ${reAuthError.message}`, false);
+            throw new Error("Authentication failed - please refresh the page and try again");
+          }
+        }
+      }
+
+      if (!currentUser) {
+        throw new Error("No authenticated user found after all attempts");
+      }
+
+      logOperation(`Authenticated user confirmed: ${currentUser.id}`);
 
       // Ensure we have valid data structure with proper null checks
       const dataToSave = {
@@ -460,20 +723,37 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         interests: resumeData?.interests || "",
       };
 
-      console.log("Saving resume data:", dataToSave);
+      logOperation("Attempting to save resume data to Supabase");
 
+      // Save to Supabase with user-scoped data
       const { error } = await supabase.from("resume_data").upsert({
         id: "main",
         content: dataToSave,
         updated_at: new Date().toISOString(),
+        user_id: currentUser.id, // Critical: RLS anchor for user-scoped access
       });
 
       if (error) {
-        logOperation(`Failed to save resume data: ${error.message}`, false);
+        logOperation(`Supabase save error: ${error.message}`, false);
+
+        // Handle specific auth errors with retry
+        if (
+          (error.message.includes("401") ||
+          error.message.includes("JWT") ||
+          error.message.includes("auth") ||
+          error.message.includes("permission") ||
+          error.message.includes("RLS")) &&
+          retryCount < 1
+        ) {
+          logOperation("Auth/RLS error detected, attempting one retry");
+          await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds
+          return saveResumeData(retryCount + 1);
+        }
+
         throw error;
       }
 
-      logOperation("Resume data saved successfully");
+      logOperation("Resume data saved successfully to Supabase");
       toast({
         title: "Resume Data Saved",
         description: "Your resume information has been updated successfully.",
@@ -481,13 +761,62 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     } catch (error: any) {
       console.error("Error saving resume data:", error);
       logOperation(`Resume save failed: ${error.message}`, false);
-      toast({
-        title: "Save Failed",
-        description:
-          error.message || "Failed to save resume data. Please try again.",
-        variant: "destructive",
-      });
+
+      // Differentiate between auth errors and other errors
+      if (
+        error.message.includes("401") ||
+        error.message.includes("JWT") ||
+        error.message.includes("Authentication") ||
+        error.message.includes("auth") ||
+        error.message.includes("permission") ||
+        error.message.includes("RLS")
+      ) {
+        // For auth errors, show specific guidance
+        toast({
+          title: "Authentication Issue",
+          description: "Session expired or invalid. Please refresh the page and try again.",
+          variant: "destructive",
+        });
+      } else {
+        // For other errors, show generic error toast
+        toast({
+          title: "Save Failed",
+          description:
+            error.message || "Failed to save resume data. Please try again.",
+          variant: "destructive",
+        });
+      }
+      
+      // NEVER redirect from save operations - let user decide what to do
+    } finally {
+      setIsSavingResume(false);
     }
+  };
+
+  // Controlled input handlers for resume form - isolated from parent state
+  const handleResumeInputChange = (field: string, value: string) => {
+    setResumeData((prev) => ({
+      ...prev,
+      personalInfo: {
+        ...prev.personalInfo,
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleResumeLanguagesChange = (value: string) => {
+    const languagesArray = value.split(", ").filter((lang) => lang.trim());
+    setResumeData((prev) => ({
+      ...prev,
+      languages: languagesArray,
+    }));
+  };
+
+  const handleResumeInterestsChange = (value: string) => {
+    setResumeData((prev) => ({
+      ...prev,
+      interests: value,
+    }));
   };
 
   const handleImageUpload = async (
@@ -520,30 +849,35 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     logOperation("Starting image upload");
 
     try {
-      // Get current user
+      // Authentication check before upload
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        throw new Error("User not authenticated");
+        logOperation("Authentication check failed before upload", false);
+        throw new Error(
+          "Login expired! Please log in again to upload profile image.",
+        );
       }
 
-      // Upload to Supabase Storage
+      // Upload to Supabase Storage with authenticated path
       const fileExt = file.name.split(".").pop();
-      const fileName = `profile-${user.id}-${Date.now()}.${fileExt}`;
+      const fileName = `${user.id}/${Date.now()}-${file.name}`; // Use authenticated path with user ID
 
       // Delete old image if exists
-      if (profileImage && profileImage.includes("profile-images")) {
-        const oldFileName = profileImage.split("/").pop();
-        if (oldFileName) {
-          await supabase.storage.from("profile-images").remove([oldFileName]);
+      if (profileImage && profileImage.includes("avatars")) {
+        const oldFilePath = profileImage.split("avatars/")[1];
+        if (oldFilePath && oldFilePath.startsWith(user.id)) {
+          await supabase.storage.from("avatars").remove([oldFilePath]);
+          logOperation(`Removed old profile image: ${oldFilePath}`);
         }
       }
 
+      // Upload to avatars bucket with user-specific path
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("profile-images")
+        .from("avatars")
         .upload(fileName, file, {
           cacheControl: "3600",
           upsert: true,
@@ -557,7 +891,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       // Get public URL
       const {
         data: { publicUrl },
-      } = supabase.storage.from("profile-images").getPublicUrl(fileName);
+      } = supabase.storage.from("avatars").getPublicUrl(fileName);
 
       // Update profile with new avatar URL
       const { error: updateError } = await supabase.from("profiles").upsert({
@@ -572,7 +906,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       }
 
       setProfileImage(publicUrl);
-      logOperation("Profile image uploaded and updated successfully");
+      logOperation(
+        `Profile image uploaded successfully to avatars/${fileName}`,
+      );
 
       toast({
         title: "Profile Image Updated",
@@ -2091,34 +2427,23 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         <div className="space-y-2">
                           <Label>Full Name</Label>
                           <Input
-                            value={resumeData?.personalInfo?.fullName || ""}
-                            onChange={(e) => {
-                              const newValue = e.target.value;
-                              setResumeData((prev) => ({
-                                ...prev,
-                                personalInfo: {
-                                  ...(prev?.personalInfo || {}),
-                                  fullName: newValue,
-                                },
-                              }));
-                            }}
+                            value={resumeData.personalInfo.fullName}
+                            onChange={(e) =>
+                              handleResumeInputChange(
+                                "fullName",
+                                e.target.value,
+                              )
+                            }
                             placeholder="Your full name"
                           />
                         </div>
                         <div className="space-y-2">
                           <Label>Email</Label>
                           <Input
-                            value={resumeData?.personalInfo?.email || ""}
-                            onChange={(e) => {
-                              const newValue = e.target.value;
-                              setResumeData((prev) => ({
-                                ...prev,
-                                personalInfo: {
-                                  ...(prev?.personalInfo || {}),
-                                  email: newValue,
-                                },
-                              }));
-                            }}
+                            value={resumeData.personalInfo.email}
+                            onChange={(e) =>
+                              handleResumeInputChange("email", e.target.value)
+                            }
                             placeholder="your.email@example.com"
                             type="email"
                           />
@@ -2129,34 +2454,23 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         <div className="space-y-2">
                           <Label>Phone</Label>
                           <Input
-                            value={resumeData?.personalInfo?.phone || ""}
-                            onChange={(e) => {
-                              const newValue = e.target.value;
-                              setResumeData((prev) => ({
-                                ...prev,
-                                personalInfo: {
-                                  ...(prev?.personalInfo || {}),
-                                  phone: newValue,
-                                },
-                              }));
-                            }}
+                            value={resumeData.personalInfo.phone}
+                            onChange={(e) =>
+                              handleResumeInputChange("phone", e.target.value)
+                            }
                             placeholder="+1 (555) 123-4567"
                           />
                         </div>
                         <div className="space-y-2">
                           <Label>Location</Label>
                           <Input
-                            value={resumeData?.personalInfo?.location || ""}
-                            onChange={(e) => {
-                              const newValue = e.target.value;
-                              setResumeData((prev) => ({
-                                ...prev,
-                                personalInfo: {
-                                  ...(prev?.personalInfo || {}),
-                                  location: newValue,
-                                },
-                              }));
-                            }}
+                            value={resumeData.personalInfo.location}
+                            onChange={(e) =>
+                              handleResumeInputChange(
+                                "location",
+                                e.target.value,
+                              )
+                            }
                             placeholder="City, Country"
                           />
                         </div>
@@ -2165,17 +2479,10 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       <div className="space-y-2">
                         <Label>Professional Summary</Label>
                         <Textarea
-                          value={resumeData?.personalInfo?.summary || ""}
-                          onChange={(e) => {
-                            const newValue = e.target.value;
-                            setResumeData((prev) => ({
-                              ...prev,
-                              personalInfo: {
-                                ...(prev?.personalInfo || {}),
-                                summary: newValue,
-                              },
-                            }));
-                          }}
+                          value={resumeData.personalInfo.summary}
+                          onChange={(e) =>
+                            handleResumeInputChange("summary", e.target.value)
+                          }
                           placeholder="Write a brief professional summary..."
                           rows={3}
                         />
@@ -2185,34 +2492,23 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         <div className="space-y-2">
                           <Label>LinkedIn URL</Label>
                           <Input
-                            value={resumeData?.personalInfo?.linkedin || ""}
-                            onChange={(e) => {
-                              const newValue = e.target.value;
-                              setResumeData((prev) => ({
-                                ...prev,
-                                personalInfo: {
-                                  ...(prev?.personalInfo || {}),
-                                  linkedin: newValue,
-                                },
-                              }));
-                            }}
+                            value={resumeData.personalInfo.linkedin}
+                            onChange={(e) =>
+                              handleResumeInputChange(
+                                "linkedin",
+                                e.target.value,
+                              )
+                            }
                             placeholder="https://linkedin.com/in/..."
                           />
                         </div>
                         <div className="space-y-2">
                           <Label>GitHub URL</Label>
                           <Input
-                            value={resumeData?.personalInfo?.github || ""}
-                            onChange={(e) => {
-                              const newValue = e.target.value;
-                              setResumeData((prev) => ({
-                                ...prev,
-                                personalInfo: {
-                                  ...(prev?.personalInfo || {}),
-                                  github: newValue,
-                                },
-                              }));
-                            }}
+                            value={resumeData.personalInfo.github}
+                            onChange={(e) =>
+                              handleResumeInputChange("github", e.target.value)
+                            }
                             placeholder="https://github.com/..."
                           />
                         </div>
@@ -2221,17 +2517,10 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       <div className="space-y-2">
                         <Label>Website</Label>
                         <Input
-                          value={resumeData?.personalInfo?.website || ""}
-                          onChange={(e) => {
-                            const newValue = e.target.value;
-                            setResumeData((prev) => ({
-                              ...prev,
-                              personalInfo: {
-                                ...(prev?.personalInfo || {}),
-                                website: newValue,
-                              },
-                            }));
-                          }}
+                          value={resumeData.personalInfo.website}
+                          onChange={(e) =>
+                            handleResumeInputChange("website", e.target.value)
+                          }
                           placeholder="https://yourwebsite.com"
                         />
                       </div>
@@ -2240,19 +2529,13 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         <Label>Languages</Label>
                         <Input
                           value={
-                            Array.isArray(resumeData?.languages)
+                            Array.isArray(resumeData.languages)
                               ? resumeData.languages.join(", ")
                               : ""
                           }
-                          onChange={(e) => {
-                            const newValue = e.target.value;
-                            setResumeData((prev) => ({
-                              ...prev,
-                              languages: newValue
-                                .split(", ")
-                                .filter((lang) => lang.trim()),
-                            }));
-                          }}
+                          onChange={(e) =>
+                            handleResumeLanguagesChange(e.target.value)
+                          }
                           placeholder="English, Hindi, etc."
                         />
                       </div>
@@ -2260,22 +2543,26 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       <div className="space-y-2">
                         <Label>Interests & Hobbies</Label>
                         <Input
-                          value={resumeData?.interests || ""}
-                          onChange={(e) => {
-                            const newValue = e.target.value;
-                            setResumeData((prev) => ({
-                              ...prev,
-                              interests: newValue,
-                            }));
-                          }}
+                          value={resumeData.interests}
+                          onChange={(e) =>
+                            handleResumeInterestsChange(e.target.value)
+                          }
                           placeholder="Photography, Travel, Open Source..."
                         />
                       </div>
                     </div>
 
-                    <Button onClick={saveResumeData} className="w-full">
-                      <Save className="w-4 h-4 mr-2" />
-                      Save Resume Data
+                    <Button
+                      onClick={saveResumeData}
+                      disabled={isSavingResume}
+                      className="w-full bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white"
+                    >
+                      {isSavingResume ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4 mr-2" />
+                      )}
+                      {isSavingResume ? "Saving..." : "Save Resume Data"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -2301,6 +2588,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                             src={profileImage}
                             alt="Profile"
                             className="w-full h-full object-cover"
+                            key={
+                              profileImage
+                            } /* Add key to force re-render when image changes */
                           />
                         ) : (
                           <img
@@ -2329,9 +2619,13 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       />
                       <label
                         htmlFor="profile-image-upload"
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white rounded-lg cursor-pointer transition-all duration-200 disabled:opacity-50"
+                        className={`inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white rounded-lg cursor-pointer transition-all duration-200 ${isUploadingImage ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
-                        <Upload className="w-4 h-4" />
+                        {isUploadingImage ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Upload className="w-4 h-4" />
+                        )}
                         {isUploadingImage ? "Uploading..." : "Upload New Image"}
                       </label>
                       <p className="text-sm text-gray-500 mt-2">
@@ -2350,6 +2644,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         <li>• Portfolio experience page</li>
                         <li>• Chat widget avatar</li>
                         <li>• Generated PDF resume</li>
+                        <li>
+                          • Stored in: avatars/{"{user-id}"}/{"{filename}"}
+                        </li>
                       </ul>
                     </div>
                   </div>
