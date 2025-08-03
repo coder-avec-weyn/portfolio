@@ -21,8 +21,10 @@ export type Database = {
           id: string
           message: string
           name: string
+          priority: string | null
           status: string | null
           subject: string | null
+          tags: string[] | null
           user_flow: string | null
         }
         Insert: {
@@ -31,8 +33,10 @@ export type Database = {
           id?: string
           message: string
           name: string
+          priority?: string | null
           status?: string | null
           subject?: string | null
+          tags?: string[] | null
           user_flow?: string | null
         }
         Update: {
@@ -41,8 +45,10 @@ export type Database = {
           id?: string
           message?: string
           name?: string
+          priority?: string | null
           status?: string | null
           subject?: string | null
+          tags?: string[] | null
           user_flow?: string | null
         }
         Relationships: []
@@ -490,7 +496,9 @@ export type Database = {
       }
       visitor_analytics: {
         Row: {
+          country: string | null
           created_at: string
+          device_type: string | null
           id: string
           ip_address: unknown | null
           page_path: string | null
@@ -501,7 +509,9 @@ export type Database = {
           user_flow: string | null
         }
         Insert: {
+          country?: string | null
           created_at?: string
+          device_type?: string | null
           id?: string
           ip_address?: unknown | null
           page_path?: string | null
@@ -512,7 +522,9 @@ export type Database = {
           user_flow?: string | null
         }
         Update: {
+          country?: string | null
           created_at?: string
+          device_type?: string | null
           id?: string
           ip_address?: unknown | null
           page_path?: string | null
@@ -526,7 +538,27 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      analytics_summary: {
+        Row: {
+          avg_time_spent: number | null
+          date: string | null
+          unique_sessions: number | null
+          unique_visitors: number | null
+          user_flow: string | null
+          visits: number | null
+        }
+        Relationships: []
+      }
+      contact_summary: {
+        Row: {
+          count: number | null
+          date: string | null
+          priority: string | null
+          status: string | null
+          user_flow: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never

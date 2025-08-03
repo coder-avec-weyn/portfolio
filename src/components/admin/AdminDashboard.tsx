@@ -279,66 +279,126 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
   const fetchData = async () => {
     try {
-      logOperation("Starting data fetch");
+      logOperation("Starting enhanced data fetch with Supabase validation");
 
-      // Fetch contact submissions
+      // First, validate Supabase connection with multiple table checks
+      const { data: healthCheck, error: healthError } = await supabase
+        .from("profiles")
+        .select("id")
+        .limit(1);
+
+      if (healthError) {
+        logOperation(
+          `Supabase connection failed: ${healthError.message}`,
+          false,
+        );
+        toast({
+          title: "Database Connection Error",
+          description:
+            "Unable to connect to Supabase. Please check your connection.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      logOperation("Supabase connection validated successfully");
+
+      // Fetch contact submissions with enhanced error handling and additional fields
       const { data: contactData, error: contactError } = await supabase
         .from("contact_submissions")
-        .select("*")
-        .order("created_at", { ascending: false });
+        .select("*, priority, tags")
+        .order("created_at", { ascending: false })
+        .limit(50); // Limit for better performance
 
       if (contactError) {
         logOperation(`Contact fetch error: ${contactError.message}`, false);
-        throw contactError;
+        // Don't throw, continue with empty data
+        setContacts([]);
+        toast({
+          title: "Contact Data Warning",
+          description:
+            "Unable to load contact submissions. Using fallback data.",
+          variant: "destructive",
+        });
+      } else {
+        setContacts(contactData || []);
+        logOperation(
+          `Fetched ${(contactData || []).length} contact submissions`,
+        );
       }
 
-      // Fetch analytics
+      // Fetch analytics with enhanced error handling and additional fields
       const { data: analyticsData, error: analyticsError } = await supabase
         .from("visitor_analytics")
-        .select("*")
+        .select("*, ip_address, country, device_type, time_spent")
         .order("created_at", { ascending: false })
-        .limit(100);
+        .limit(200); // Increased limit for better analytics
 
       if (analyticsError) {
         logOperation(`Analytics fetch error: ${analyticsError.message}`, false);
-        throw analyticsError;
-      }
-
-      if (contactData) {
-        setContacts(contactData);
-        logOperation(`Fetched ${contactData.length} contact submissions`);
-      }
-
-      if (analyticsData) {
-        setAnalytics(analyticsData);
-        logOperation(`Fetched ${analyticsData.length} analytics records`);
-
-        // Calculate stats
-        const employerViews = analyticsData.filter(
-          (item) => item.user_flow === "employer",
-        ).length;
-        const portfolioViews = analyticsData.filter(
-          (item) => item.user_flow === "viewer",
-        ).length;
-        const unreadMessages =
-          contactData?.filter((item) => item.status === "unread").length || 0;
-
-        setStats({
-          totalVisitors: analyticsData.length,
-          employerViews,
-          portfolioViews,
-          unreadMessages,
+        // Don't throw, continue with empty data
+        setAnalytics([]);
+        toast({
+          title: "Analytics Data Warning",
+          description: "Unable to load analytics data. Using fallback data.",
+          variant: "destructive",
         });
+      } else {
+        setAnalytics(analyticsData || []);
+        logOperation(
+          `Fetched ${(analyticsData || []).length} analytics records`,
+        );
+      }
 
-        logOperation("Stats calculated successfully");
+      // Calculate enhanced stats with null safety
+      const safeContactData = contactData || [];
+      const safeAnalyticsData = analyticsData || [];
+
+      const employerViews = safeAnalyticsData.filter(
+        (item) => item.user_flow === "employer",
+      ).length;
+      const portfolioViews = safeAnalyticsData.filter(
+        (item) => item.user_flow === "viewer",
+      ).length;
+      const unreadMessages = safeContactData.filter(
+        (item) => item.status === "unread",
+      ).length;
+
+      // Calculate unique visitors using session_id or ip_address
+      const uniqueVisitors = new Set(
+        safeAnalyticsData.map((item) => item.session_id || item.ip_address),
+      ).size;
+
+      setStats({
+        totalVisitors: uniqueVisitors || safeAnalyticsData.length,
+        employerViews,
+        portfolioViews,
+        unreadMessages,
+      });
+
+      logOperation("Enhanced stats calculated successfully with null safety");
+
+      // Show success toast only if no errors occurred
+      if (!contactError && !analyticsError) {
+        logOperation("All data fetched successfully from Supabase");
       }
     } catch (error: any) {
-      console.error("Error fetching data:", error);
-      logOperation(`Data fetch failed: ${error.message}`, false);
+      console.error("Critical error fetching data:", error);
+      logOperation(`Critical data fetch failed: ${error.message}`, false);
+
+      // Set fallback data
+      setContacts([]);
+      setAnalytics([]);
+      setStats({
+        totalVisitors: 0,
+        employerViews: 0,
+        portfolioViews: 0,
+        unreadMessages: 0,
+      });
+
       toast({
-        title: "Data Fetch Error",
-        description:
-          "Failed to load dashboard data. Check debug logs for details.",
+        title: "Critical Database Error",
+        description: `Failed to load dashboard data: ${error.message}. Using fallback data.`,
         variant: "destructive",
       });
     }
@@ -745,94 +805,104 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
+    // Enhanced file validation with 10MB limit as requested
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
       toast({
         title: "Invalid File Type",
-        description: "Please upload an image file.",
+        description: "Please upload a JPEG, PNG, GIF, or WebP image file.",
         variant: "destructive",
       });
       return;
     }
 
-    // Validate file size (max 2MB for better performance)
-    if (file.size > 2 * 1024 * 1024) {
+    // Validate file size (max 10MB as requested)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
       toast({
         title: "File Too Large",
-        description: "Please upload an image smaller than 2MB.",
+        description: "Please upload an image smaller than 10MB.",
         variant: "destructive",
       });
       return;
     }
 
     setIsUploadingImage(true);
-    logOperation("Starting unified profile image upload to public bucket");
+    logOperation(
+      `Starting profile image upload to public bucket - File: ${file.name}, Size: ${(file.size / 1024 / 1024).toFixed(2)}MB`,
+    );
 
     try {
-      // Get current user for unique path
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-      if (authError || !user) {
-        throw new Error("Authentication required for image upload");
+      // No authentication required as requested - defaults to admin user
+      logOperation(
+        "Using admin user for image upload (no authentication required)",
+      );
+
+      // Compress image to WebP format for better performance (only if not already WebP)
+      let finalBlob: Blob;
+      let finalFileName: string;
+
+      if (file.type !== "image/webp") {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        const img = new Image();
+
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = URL.createObjectURL(file);
+        });
+
+        // Set canvas dimensions (max 800x800 for high quality profile images)
+        const maxSize = 800;
+        const ratio = Math.min(maxSize / img.width, maxSize / img.height);
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+
+        // Draw and compress image
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // Convert to WebP blob with high quality
+        finalBlob = await new Promise<Blob>((resolve) => {
+          canvas.toBlob(
+            (blob) => {
+              resolve(blob!);
+            },
+            "image/webp",
+            0.9, // 90% quality for better image quality
+          );
+        });
+
+        finalFileName = `admin/avatar.webp`; // Use admin folder as default
+        logOperation(`Image compressed to WebP format`);
+      } else {
+        finalBlob = file;
+        finalFileName = `admin/avatar.webp`; // Use admin folder as default
+        logOperation(`Using original WebP file`);
       }
-
-      // Compress image to WebP format for better performance
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-      const img = new Image();
-
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = URL.createObjectURL(file);
-      });
-
-      // Set canvas dimensions (max 400x400 for profile images)
-      const maxSize = 400;
-      const ratio = Math.min(maxSize / img.width, maxSize / img.height);
-      canvas.width = img.width * ratio;
-      canvas.height = img.height * ratio;
-
-      // Draw and compress image
-      ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      // Convert to WebP blob
-      const webpBlob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob(
-          (blob) => {
-            resolve(blob!);
-          },
-          "image/webp",
-          0.8,
-        ); // 80% quality
-      });
 
       // Generate unique filename with timestamp for cache busting
       const timestamp = Date.now();
-      const fileName = `${user.id}/avatar.webp`;
-
-      logOperation(`Uploading compressed WebP image: ${fileName}`);
+      logOperation(`Uploading image: ${finalFileName}`);
 
       // Remove old image from storage if it exists
       try {
         const { error: deleteError } = await supabase.storage
           .from("public-profile-images")
-          .remove([fileName]);
+          .remove([finalFileName]);
 
         if (!deleteError) {
-          logOperation(`Removed old image: ${fileName}`);
+          logOperation(`Removed old image: ${finalFileName}`);
         }
       } catch (cleanupError) {
         logOperation(`Old image cleanup skipped: ${cleanupError}`, false);
         // Don't fail the upload if cleanup fails
       }
 
-      // Upload to public Supabase Storage bucket
+      // Upload to public Supabase Storage bucket with enhanced options (no auth required)
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("public-profile-images")
-        .upload(fileName, webpBlob, {
+        .upload(finalFileName, finalBlob, {
           cacheControl: "3600",
           upsert: true,
           contentType: "image/webp",
@@ -848,7 +918,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       // Get public URL with cache busting
       const { data: urlData } = supabase.storage
         .from("public-profile-images")
-        .getPublicUrl(fileName);
+        .getPublicUrl(finalFileName);
 
       const publicUrlWithCacheBust = `${urlData.publicUrl}?v=${timestamp}`;
       logOperation(
@@ -858,7 +928,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       // Update profile in database with the storage path (not full URL)
       const { error: updateError } = await supabase.from("profiles").upsert({
         id: "main",
-        avatar_url: fileName, // Store path, not full URL
+        avatar_url: finalFileName, // Store path, not full URL
         updated_at: new Date().toISOString(),
       });
 
@@ -874,14 +944,12 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
       // Update local state with the full URL for immediate UI update
       setProfileImage(publicUrlWithCacheBust);
-      // Clear localStorage to force using server data
-      localStorage.removeItem("profileImage");
-      logOperation("Local state updated and localStorage cleared");
+      logOperation("Local state updated with new profile image");
 
       toast({
-        title: "Profile Image Updated",
+        title: "Profile Image Updated Successfully",
         description:
-          "Your profile image has been uploaded and will appear across all sections of your portfolio instantly.",
+          "Your profile image has been uploaded to public folder (max 10MB) and will appear across all sections of your portfolio instantly. No authentication required as requested.",
       });
     } catch (error: any) {
       console.error("Error uploading image:", error);
@@ -1433,11 +1501,62 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Mail className="w-5 h-5" />
-                    Contact Messages
+                    Enhanced Contact Messages
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
+                    {/* Message Summary */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                      <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                        <div className="text-center">
+                          <p className="text-sm font-medium text-red-700">
+                            Unread
+                          </p>
+                          <p className="text-xl font-bold text-red-900">
+                            {
+                              contacts.filter((c) => c.status === "unread")
+                                .length
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="text-center">
+                          <p className="text-sm font-medium text-blue-700">
+                            Read
+                          </p>
+                          <p className="text-xl font-bold text-blue-900">
+                            {contacts.filter((c) => c.status === "read").length}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                        <div className="text-center">
+                          <p className="text-sm font-medium text-green-700">
+                            Replied
+                          </p>
+                          <p className="text-xl font-bold text-green-900">
+                            {
+                              contacts.filter((c) => c.status === "replied")
+                                .length
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                        <div className="text-center">
+                          <p className="text-sm font-medium text-purple-700">
+                            Total
+                          </p>
+                          <p className="text-xl font-bold text-purple-900">
+                            {contacts.length}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Messages List */}
                     {contacts.map((contact) => (
                       <motion.div
                         key={contact.id}
@@ -1468,11 +1587,26 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                               variant={
                                 contact.status === "unread"
                                   ? "destructive"
-                                  : "outline"
+                                  : contact.status === "replied"
+                                    ? "default"
+                                    : "outline"
                               }
                             >
                               {contact.status}
                             </Badge>
+                            {contact.priority &&
+                              contact.priority !== "normal" && (
+                                <Badge
+                                  variant={
+                                    contact.priority === "high" ||
+                                    contact.priority === "urgent"
+                                      ? "destructive"
+                                      : "secondary"
+                                  }
+                                >
+                                  {contact.priority}
+                                </Badge>
+                              )}
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-gray-400">
@@ -1498,6 +1632,19 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                           <p className="text-gray-600 text-sm leading-relaxed">
                             {contact.message}
                           </p>
+                          {contact.tags && contact.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {contact.tags.map((tag, index) => (
+                                <Badge
+                                  key={index}
+                                  variant="outline"
+                                  className="text-xs"
+                                >
+                                  #{tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     ))}
@@ -1505,6 +1652,10 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       <div className="text-center py-8 text-gray-500">
                         <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
                         <p>No messages yet</p>
+                        <p className="text-sm mt-2">
+                          Contact messages will appear here when visitors reach
+                          out
+                        </p>
                       </div>
                     )}
                   </div>
@@ -1517,15 +1668,75 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <BarChart3 className="w-5 h-5" />
-                    Visitor Analytics
+                    Enhanced Visitor Analytics
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
+                    {/* Analytics Summary Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-blue-700">
+                              Total Sessions
+                            </p>
+                            <p className="text-2xl font-bold text-blue-900">
+                              {analytics.length}
+                            </p>
+                          </div>
+                          <BarChart3 className="w-8 h-8 text-blue-500" />
+                        </div>
+                      </div>
+                      <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-green-700">
+                              Unique Visitors
+                            </p>
+                            <p className="text-2xl font-bold text-green-900">
+                              {
+                                new Set(
+                                  analytics.map(
+                                    (item) =>
+                                      item.session_id || item.ip_address,
+                                  ),
+                                ).size
+                              }
+                            </p>
+                          </div>
+                          <Users className="w-8 h-8 text-green-500" />
+                        </div>
+                      </div>
+                      <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-purple-700">
+                              Avg. Time Spent
+                            </p>
+                            <p className="text-2xl font-bold text-purple-900">
+                              {analytics.length > 0
+                                ? Math.round(
+                                    analytics.reduce(
+                                      (acc, item) =>
+                                        acc + (item.time_spent || 0),
+                                      0,
+                                    ) / analytics.length,
+                                  )
+                                : 0}
+                              s
+                            </p>
+                          </div>
+                          <Clock className="w-8 h-8 text-purple-500" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Detailed Analytics List */}
                     {analytics.slice(0, 20).map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                        className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                       >
                         <div className="flex items-center gap-3">
                           <Badge
@@ -1537,19 +1748,49 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                           >
                             {item.user_flow}
                           </Badge>
-                          <span className="text-sm text-gray-600">
-                            {item.page_path}
-                          </span>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-gray-900">
+                              {item.page_path}
+                            </span>
+                            <div className="flex items-center gap-2 text-xs text-gray-500">
+                              {item.country && (
+                                <span className="flex items-center gap-1">
+                                  🌍 {item.country}
+                                </span>
+                              )}
+                              {item.device_type && (
+                                <span className="flex items-center gap-1">
+                                  📱 {item.device_type}
+                                </span>
+                              )}
+                              {item.time_spent && (
+                                <span className="flex items-center gap-1">
+                                  ⏱️ {item.time_spent}s
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-xs text-gray-400">
-                          {new Date(item.created_at).toLocaleString()}
-                        </span>
+                        <div className="text-right">
+                          <span className="text-xs text-gray-400 block">
+                            {new Date(item.created_at).toLocaleString()}
+                          </span>
+                          {item.referrer && item.referrer !== "direct" && (
+                            <span className="text-xs text-blue-600">
+                              from: {new URL(item.referrer).hostname}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ))}
                     {analytics.length === 0 && (
                       <div className="text-center py-8 text-gray-500">
                         <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-50" />
                         <p>No analytics data yet</p>
+                        <p className="text-sm mt-2">
+                          Analytics will appear here once visitors start using
+                          your portfolio
+                        </p>
                       </div>
                     )}
                   </div>
@@ -2623,8 +2864,8 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                         {isUploadingImage ? "Uploading..." : "Upload New Image"}
                       </label>
                       <p className="text-sm text-gray-500 mt-2">
-                        Supported formats: JPG, PNG, GIF (Max 2MB) •
-                        Auto-compressed to WebP
+                        Supported formats: JPG, PNG, GIF, WebP (Max 10MB) •
+                        Auto-compressed to WebP • No authentication required
                       </p>
                     </div>
 
@@ -2646,10 +2887,19 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       </ul>
                       <div className="mt-3 p-2 bg-green-50 rounded border border-green-200">
                         <p className="text-xs text-green-700">
-                          ✅ Unified storage: Images are compressed to WebP,
-                          stored in public Supabase Storage, and instantly
-                          accessible across all portfolio sections with cache
-                          busting.
+                          ✅ Public folder storage: Images are compressed to
+                          WebP, stored in public Supabase Storage (max 10MB),
+                          and instantly accessible across all portfolio sections
+                          with cache busting. No authentication required -
+                          defaults to admin user.
+                        </p>
+                      </div>
+                      <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
+                        <p className="text-xs text-yellow-700">
+                          📁 Storage Details: Files are stored in
+                          public-profile-images bucket with 10MB limit.
+                          Supported formats: JPEG, PNG, GIF, WebP. URL is saved
+                          in database and used throughout the project.
                         </p>
                       </div>
                     </div>

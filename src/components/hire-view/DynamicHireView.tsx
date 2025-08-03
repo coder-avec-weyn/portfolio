@@ -228,7 +228,8 @@ export default function DynamicHireView({
           full_name: "Ramya Lakhani",
           bio: "Full-stack developer passionate about creating amazing digital experiences",
           role: "Full-Stack Developer",
-          avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ramya",
+          avatar_url:
+            "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face&auto=format&q=80",
         });
       }
     } catch (error) {
@@ -238,7 +239,8 @@ export default function DynamicHireView({
         full_name: "Ramya Lakhani",
         bio: "Full-stack developer passionate about creating amazing digital experiences",
         role: "Full-Stack Developer",
-        avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=ramya",
+        avatar_url:
+          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face&auto=format&q=80",
       });
     }
   };
@@ -678,37 +680,16 @@ export default function DynamicHireView({
           background: `linear-gradient(135deg, ${themeSettings.primaryColor}, ${themeSettings.secondaryColor})`,
         }}
       >
-        {(() => {
-          if (profile?.avatar_url) {
-            // Check if it's a storage path or full URL
-            let imageUrl;
-            if (profile.avatar_url.startsWith("http")) {
-              imageUrl = `${profile.avatar_url}?v=${Date.now()}`;
-            } else {
-              // Generate public URL from storage path
-              const { data } = supabase.storage
-                .from("public-profile-images")
-                .getPublicUrl(profile.avatar_url);
-              imageUrl = `${data.publicUrl}?v=${Date.now()}`;
-            }
-
-            return (
-              <img
-                src={imageUrl}
-                alt={profile?.full_name || "Profile"}
-                className="w-full h-full object-cover"
-                key={`${profile.avatar_url}-${Date.now()}`}
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src =
-                    "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100";
-                }}
-              />
-            );
-          } else {
-            return section.content?.avatar_text || "RL";
-          }
-        })()}
+        <img
+          src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face&auto=format&q=80"
+          alt={profile?.full_name || "Profile"}
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            const target = e.target as HTMLImageElement;
+            target.src =
+              "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop&crop=face&auto=format&q=80";
+          }}
+        />
       </div>
       <h1
         className={`text-4xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}

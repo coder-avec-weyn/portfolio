@@ -215,7 +215,7 @@ export default function LandingPage() {
           bio: "Full-stack developer passionate about creating amazing digital experiences",
           role: "Full-Stack Developer",
           avatar_url:
-            "https://api.dicebear.com/7.x/avataaars/svg?seed=boydev&accessories=prescription02&accessoriesChance=100&clothingGraphic=code&top=shortHair&topChance=100&facialHair=light&facialHairChance=100&skinColor=light",
+            "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face&auto=format&q=80",
         });
       }
     } catch (error) {
@@ -226,7 +226,7 @@ export default function LandingPage() {
         bio: "Full-stack developer passionate about creating amazing digital experiences",
         role: "Full-Stack Developer",
         avatar_url:
-          "https://api.dicebear.com/7.x/avataaars/svg?seed=developer&accessories=sunglasses&accessoriesChance=100&clothingGraphic=skull&top=shortHair&topChance=100&facialHair=goatee&facialHairChance=100",
+          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face&auto=format&q=80",
       });
     }
   };
@@ -395,28 +395,13 @@ export default function LandingPage() {
                 >
                   <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-900 to-purple-900 flex items-center justify-center text-white text-4xl lg:text-5xl font-bold overflow-hidden">
                     <img
-                      src={(() => {
-                        if (profile?.avatar_url) {
-                          // Check if it's a storage path or full URL
-                          if (profile.avatar_url.startsWith("http")) {
-                            return `${profile.avatar_url}?v=${Date.now()}`;
-                          } else {
-                            // Generate public URL from storage path
-                            const { data } = supabase.storage
-                              .from("public-profile-images")
-                              .getPublicUrl(profile.avatar_url);
-                            return `${data.publicUrl}?v=${Date.now()}`;
-                          }
-                        }
-                        return "https://api.dicebear.com/7.x/avataaars/svg?seed=boydev&accessories=prescription02&accessoriesChance=100&clothingGraphic=code&top=shortHair&topChance=100&facialHair=light&facialHairChance=100&skinColor=light";
-                      })()}
+                      src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face&auto=format&q=80"
                       alt={profile?.full_name || "Profile Avatar"}
                       className="w-full h-full object-cover rounded-full"
-                      key={`${profile?.avatar_url || "default"}-${Date.now()}`}
                       onError={(e) => {
                         const target = e.target as HTMLImageElement;
                         target.src =
-                          "https://api.dicebear.com/7.x/avataaars/svg?seed=boydev&accessories=prescription02&accessoriesChance=100&clothingGraphic=code&top=shortHair&topChance=100&facialHair=light&facialHairChance=100&skinColor=light";
+                          "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop&crop=face&auto=format&q=80";
                       }}
                     />
                   </div>

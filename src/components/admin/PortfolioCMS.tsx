@@ -330,10 +330,10 @@ export default function PortfolioCMS() {
     try {
       setIsSaving(true);
       const newProject = {
-        title: "New Project",
-        description: "Project description",
-        long_description: "Detailed project description",
-        tech_stack: ["React", "TypeScript"],
+        title: "",
+        description: "",
+        long_description: "",
+        tech_stack: [],
         github_url: "",
         live_url: "",
         image_url: "",
@@ -353,7 +353,8 @@ export default function PortfolioCMS() {
       setProjects((prev) => [...prev, data]);
       toast({
         title: "Project Added",
-        description: "New project has been created successfully.",
+        description:
+          "New blank project has been created. Please fill in the details.",
       });
     } catch (error: any) {
       toast({
