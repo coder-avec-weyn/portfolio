@@ -183,9 +183,7 @@ Response:`;
 // LinkedIn profile scraping function using Gemini AI
 export async function scrapeLinkedInProfile(linkedinUrl: string): Promise<any> {
   try {
-    if (!import.meta.env.VITE_GEMINI_API_KEY) {
-      throw new Error("Gemini API key not configured");
-    }
+    // API key is hardcoded
 
     const prompt = `
 Analyze this LinkedIn profile URL: ${linkedinUrl}
@@ -328,9 +326,7 @@ Provide realistic, professional content that would typically be found on a full-
 // GitHub profile scraping function using Gemini AI
 export async function scrapeGitHubProfile(githubUrl: string): Promise<any> {
   try {
-    if (!import.meta.env.VITE_GEMINI_API_KEY) {
-      throw new Error("Gemini API key not configured");
-    }
+    // API key is hardcoded
 
     const prompt = `
 Analyze this GitHub profile URL: ${githubUrl}
@@ -471,9 +467,7 @@ export async function generateEnhancedResumeContent(
   githubData?: any,
 ): Promise<any> {
   try {
-    if (!import.meta.env.VITE_GEMINI_API_KEY) {
-      throw new Error("Gemini API key not configured");
-    }
+    // API key is hardcoded
 
     const prompt = `
 Create an enhanced resume content based on the following data:
